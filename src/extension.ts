@@ -1,44 +1,23 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import {
+    COUNTING_OPTION_DETAILS,
+    COUNTING_OPTION_KEYS,
+    CountingOptionKey,
+    CountingOptions,
+    describeExcludedSections,
+    describeStripStatus,
+    getPdfStatsForOptions,
+    PdfStats
+} from './pdfSections';
 
 type PdfParseFn = (data: Buffer) => Promise<{ text: string }>;
-
-type PdfStats = {
-    wordCount: number;
-    charCount: number;
-    charCountExcludingSpaces: number;
-};
-
-const IGNORE_REFERENCES_KEY = 'pdfWordCount.ignoreReferences';
-const REFERENCE_SECTION_PATTERN =
-    /(?:^|\n)\s*(?:references|bibliography|works cited|literature cited|citations)\s*(?:\n|$)/i;
 
 
 /* Helper functions */
 
 /**
- * Counts the number of characters in a string.
- */
-function countCharacters(text: string): number {
-    return text.length;
-}
-
-/**
- * Counts the number of characters in a string, excluding whitespace.
- */
-function countCharactersExcludingSpaces(text: string): number {
-    return text.replace(/\s/g, '').length;
-}
-
-/**
- * Counts the number of whitespace-delimited words in a string.
- */
-function countWords(text: string): number {
-    return text.split(/\s+/).filter((word: string) => word.length > 0).length;
-}
-
-/**
- * Reads a PDF file and returns its extracted text content.
+ * Extracts the text from a PDF file.
  */
 async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
     const pdf = require('pdf-parse') as PdfParseFn;
@@ -88,10 +67,16 @@ async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
 }
 
 /**
- * Builds a cache key for a PDF URI and reference-counting mode.
+ * Builds a cache key for a PDF URI and counting options.
  */
-function getCacheKey(uri: vscode.Uri, ignoreReferences: boolean): string {
-    return `${uri.toString()}|ignoreRefs=${ignoreReferences}`;
+function getCacheKey(uri: vscode.Uri, options: CountingOptions): string {
+    return [
+        uri.toString(),
+        `abs=${options.ignoreAbstract}`,
+        `toc=${options.ignoreTableOfContents}`,
+        `app=${options.ignoreAppendices}`,
+        `refs=${options.ignoreReferences}`
+    ].join('|');
 }
 
 /**
@@ -103,25 +88,10 @@ function getPdfFileNameFromTabLabel(label: string): string | undefined {
 }
 
 /**
- * Parses a PDF and returns its word and character counts, optionally excluding references.
+ * Parses a PDF and returns its word and character counts, optionally excluding sections.
  */
-async function getPdfStats(fileUri: vscode.Uri, ignoreReferences: boolean): Promise<PdfStats> {
-    let text = await extractPdfText(fileUri);
-    if (ignoreReferences) {
-        text = stripReferences(text);
-    }
-    return getPdfStatsFromText(text);
-}
-
-/**
- * Derives word and character counts from extracted PDF text.
- */
-function getPdfStatsFromText(text: string): PdfStats {
-    return {
-        wordCount: countWords(text),
-        charCount: countCharacters(text),
-        charCountExcludingSpaces: countCharactersExcludingSpaces(text)
-    };
+async function getPdfStats(fileUri: vscode.Uri, options: CountingOptions): Promise<PdfStats> {
+    return getPdfStatsForOptions(await extractPdfText(fileUri), options);
 }
 
 /**
@@ -197,17 +167,6 @@ async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | un
     return undefined;
 }
 
-/**
- * Removes the references section from extracted PDF text, if one is found.
- */
-function stripReferences(text: string): string {
-    const match = text.search(REFERENCE_SECTION_PATTERN);
-    if (match === -1) {
-        return text;
-    }
-    return text.slice(0, match);
-}
-
 
 /* Main extension code */
 
@@ -221,17 +180,35 @@ export function activate(context: vscode.ExtensionContext) {
     const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
 
     /**
-     * Returns whether reference sections should be excluded from word counts.
+     * Returns the current section-exclusion settings.
      */
-    function getIgnoreReferences(): boolean {
-        return context.globalState.get<boolean>(IGNORE_REFERENCES_KEY, false);
+    function getCountingOptions(): CountingOptions {
+        return {
+            ignoreAbstract: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreAbstract, false),
+            ignoreTableOfContents: context.globalState.get<boolean>(
+                COUNTING_OPTION_KEYS.ignoreTableOfContents,
+                false
+            ),
+            ignoreAppendices: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreAppendices, false),
+            ignoreReferences: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreReferences, false)
+        };
     }
 
     /**
-     * Persists the ignore-references setting across editor sessions.
+     * Persists a section-exclusion setting across editor sessions.
      */
-    async function setIgnoreReferences(value: boolean): Promise<void> {
-        await context.globalState.update(IGNORE_REFERENCES_KEY, value);
+    async function setCountingOption(key: CountingOptionKey, value: boolean): Promise<void> {
+        await context.globalState.update(COUNTING_OPTION_KEYS[key], value);
+    }
+
+    /**
+     * Toggles a section-exclusion setting and refreshes the status bar.
+     */
+    async function toggleCountingOption(key: CountingOptionKey): Promise<void> {
+        const options = getCountingOptions();
+        await setCountingOption(key, !options[key]);
+        pdfStatsCache.clear();
+        await updateStatusBar();
     }
 
     const statusBarItem = vscode.window.createStatusBarItem(
@@ -245,26 +222,45 @@ export function activate(context: vscode.ExtensionContext) {
     /**
      * Builds the hover tooltip shown for the status bar word count.
      */
+    function buildStatusBarSuffix(options: CountingOptions, stats: PdfStats): string {
+        const labels = (Object.keys(COUNTING_OPTION_DETAILS) as CountingOptionKey[])
+            .filter((key) => options[key] && stats.stripStatuses[key] === 'stripped')
+            .map((key) => COUNTING_OPTION_DETAILS[key].shortLabel);
+
+        return labels.length > 0 ? ` · ${labels.join(' · ')}` : '';
+    }
+
     function buildStatusBarTooltip(
         fileName: string,
         stats: PdfStats,
-        ignoreReferences: boolean
+        options: CountingOptions
     ): vscode.MarkdownString {
         const tooltip = new vscode.MarkdownString(undefined, true);
         tooltip.isTrusted = true;
 
-        const modeLabel = ignoreReferences ? 'references excluded' : 'references included';
         tooltip.appendMarkdown(`**${fileName}**\n\n`);
-        tooltip.appendMarkdown(`${stats.wordCount.toLocaleString()} words (${modeLabel})\n\n`);
+        tooltip.appendMarkdown(
+            `${stats.wordCount.toLocaleString()} words (${describeExcludedSections(options, stats.stripStatuses)})\n\n`
+        );
         tooltip.appendMarkdown(`${stats.charCount.toLocaleString()} characters\n\n`);
         tooltip.appendMarkdown(
             `${stats.charCountExcludingSpaces.toLocaleString()} characters excluding spaces\n\n`
         );
         tooltip.appendMarkdown('---\n\n');
-        tooltip.appendMarkdown(
-            `$(${ignoreReferences ? 'check' : 'circle-outline'}) Ignore references — **${ignoreReferences ? 'On' : 'Off'}**\n\n`
-        );
-        tooltip.appendMarkdown('Click to toggle reference counting');
+
+        for (const key of Object.keys(COUNTING_OPTION_DETAILS) as CountingOptionKey[]) {
+            const { label } = COUNTING_OPTION_DETAILS[key];
+            const enabled = options[key];
+            const stripStatus = stats.stripStatuses[key];
+            // when a toggle is on, show whether that section was found and excluded
+            const statusSuffix =
+                enabled && stripStatus ? ` — ${describeStripStatus(stripStatus)}` : '';
+            tooltip.appendMarkdown(
+                `$(${enabled ? 'check' : 'circle-outline'}) ${label} — **${enabled ? 'On' : 'Off'}**${statusSuffix}\n\n`
+            );
+        }
+
+        tooltip.appendMarkdown('Click to change counting options');
         return tooltip;
     }
 
@@ -274,11 +270,10 @@ export function activate(context: vscode.ExtensionContext) {
     function renderStatusBar(
         fileName: string,
         stats: PdfStats,
-        ignoreReferences: boolean
+        options: CountingOptions
     ): void {
-        const refsSuffix = ignoreReferences ? ' · no refs' : '';
-        statusBarItem.text = `$(file-pdf) PDF: ${stats.wordCount.toLocaleString()} words${refsSuffix}`;
-        statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats, ignoreReferences);
+        statusBarItem.text = `$(file-pdf) PDF: ${stats.wordCount.toLocaleString()} words${buildStatusBarSuffix(options, stats)}`;
+        statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats, options);
     }
 
     /**
@@ -291,8 +286,8 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        const ignoreReferences = getIgnoreReferences();
-        const cacheKey = getCacheKey(pdfUri, ignoreReferences);
+        const countingOptions = getCountingOptions();
+        const cacheKey = getCacheKey(pdfUri, countingOptions);
         const fileName = path.basename(pdfUri.fsPath);
         const sequence = ++updateSequence;
 
@@ -301,18 +296,18 @@ export function activate(context: vscode.ExtensionContext) {
         statusBarItem.show();
 
         if (pdfStatsCache.has(cacheKey)) {
-            renderStatusBar(fileName, pdfStatsCache.get(cacheKey)!, ignoreReferences);
+            renderStatusBar(fileName, pdfStatsCache.get(cacheKey)!, countingOptions);
             return;
         }
 
         try {
-            const stats = await getPdfStats(pdfUri, ignoreReferences);
+            const stats = await getPdfStats(pdfUri, countingOptions);
             if (sequence !== updateSequence) {
                 return;
             }
 
             pdfStatsCache.set(cacheKey, stats);
-            renderStatusBar(fileName, stats, ignoreReferences);
+            renderStatusBar(fileName, stats, countingOptions);
         } catch (err) {
             if (sequence !== updateSequence) {
                 return;
@@ -352,17 +347,30 @@ export function activate(context: vscode.ExtensionContext) {
     const showOptionsCommand = vscode.commands.registerCommand(
         'pdf-word-count.showOptions',
         async () => {
-            const ignoreReferences = getIgnoreReferences();
-            type StatusBarOption = vscode.QuickPickItem & { action: 'toggle' | 'recount' };
+            const countingOptions = getCountingOptions();
+            type StatusBarOption = vscode.QuickPickItem & {
+                action: 'toggle' | 'recount';
+                optionKey?: CountingOptionKey;
+            };
+
+            const toggleItems: StatusBarOption[] = (Object.keys(COUNTING_OPTION_DETAILS) as CountingOptionKey[]).map(
+                (optionKey) => {
+                    const enabled = countingOptions[optionKey];
+                    const { label, detail } = COUNTING_OPTION_DETAILS[optionKey];
+                    return {
+                        label: `$(${enabled ? 'check' : 'circle-outline'}) ${label}`,
+                        description: enabled ? 'Currently on' : 'Currently off',
+                        detail,
+                        picked: enabled,
+                        action: 'toggle',
+                        optionKey
+                    };
+                }
+            );
+
             const selection = await vscode.window.showQuickPick<StatusBarOption>(
                 [
-                    {
-                        label: `$(${ignoreReferences ? 'check' : 'circle-outline'}) Ignore references`,
-                        description: ignoreReferences ? 'Currently on' : 'Currently off',
-                        detail: 'Exclude the references/bibliography section from the word count',
-                        picked: ignoreReferences,
-                        action: 'toggle'
-                    },
+                    ...toggleItems,
                     {
                         label: '$(refresh) Recount words',
                         description: 'Refresh the word count for the active PDF',
@@ -379,11 +387,8 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            if (selection.action === 'toggle') {
-                const nextValue = !ignoreReferences;
-                await setIgnoreReferences(nextValue);
-                pdfStatsCache.clear();
-                await updateStatusBar();
+            if (selection.action === 'toggle' && selection.optionKey) {
+                await toggleCountingOption(selection.optionKey);
                 return;
             }
 
@@ -397,9 +402,28 @@ export function activate(context: vscode.ExtensionContext) {
     const toggleIgnoreReferencesCommand = vscode.commands.registerCommand(
         'pdf-word-count.toggleIgnoreReferences',
         async () => {
-            await setIgnoreReferences(!getIgnoreReferences());
-            pdfStatsCache.clear();
-            await updateStatusBar();
+            await toggleCountingOption('ignoreReferences');
+        }
+    );
+
+    const toggleIgnoreAbstractCommand = vscode.commands.registerCommand(
+        'pdf-word-count.toggleIgnoreAbstract',
+        async () => {
+            await toggleCountingOption('ignoreAbstract');
+        }
+    );
+
+    const toggleIgnoreTableOfContentsCommand = vscode.commands.registerCommand(
+        'pdf-word-count.toggleIgnoreTableOfContents',
+        async () => {
+            await toggleCountingOption('ignoreTableOfContents');
+        }
+    );
+
+    const toggleIgnoreAppendicesCommand = vscode.commands.registerCommand(
+        'pdf-word-count.toggleIgnoreAppendices',
+        async () => {
+            await toggleCountingOption('ignoreAppendices');
         }
     );
 
@@ -423,14 +447,13 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 vscode.window.showInformationMessage('Parsing PDF...');
 
-                const ignoreReferences = getIgnoreReferences();
-                const stats = await getPdfStats(fileUri, ignoreReferences);
-                pdfStatsCache.set(getCacheKey(fileUri, ignoreReferences), stats);
+                const countingOptions = getCountingOptions();
+                const stats = await getPdfStats(fileUri, countingOptions);
+                pdfStatsCache.set(getCacheKey(fileUri, countingOptions), stats);
 
                 const fileName = path.basename(fileUri.fsPath);
-                const modeLabel = ignoreReferences ? 'excluding references' : 'including references';
                 vscode.window.showInformationMessage(
-                    `"${fileName}" contains ${stats.wordCount.toLocaleString()} words (${modeLabel}).`
+                    `"${fileName}" contains ${stats.wordCount.toLocaleString()} words (${describeExcludedSections(countingOptions, stats.stripStatuses)}).`
                 );
 
                 if ((await getActivePdfUri())?.toString() === fileUri.toString()) {
@@ -461,6 +484,9 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         showOptionsCommand,
         toggleIgnoreReferencesCommand,
+        toggleIgnoreAbstractCommand,
+        toggleIgnoreTableOfContentsCommand,
+        toggleIgnoreAppendicesCommand,
         countWordsCommand,
         pdfWatcher,
         vscode.window.onDidChangeActiveTextEditor(() => {

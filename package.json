@@ -26,6 +26,18 @@
       {
         "command": "pdf-word-count.toggleIgnoreReferences",
         "title": "Toggle Ignore References in PDF Word Count"
+      },
+      {
+        "command": "pdf-word-count.toggleIgnoreAbstract",
+        "title": "Toggle Ignore Abstract in PDF Word Count"
+      },
+      {
+        "command": "pdf-word-count.toggleIgnoreTableOfContents",
+        "title": "Toggle Ignore Table of Contents in PDF Word Count"
+      },
+      {
+        "command": "pdf-word-count.toggleIgnoreAppendices",
+        "title": "Toggle Ignore Appendices in PDF Word Count"
       }
     ],
     "menus": {
