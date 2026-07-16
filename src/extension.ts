@@ -7,39 +7,14 @@ const IGNORE_REFERENCES_KEY = 'pdfWordCount.ignoreReferences';
 const REFERENCE_SECTION_PATTERN =
     /(?:^|\n)\s*(?:references|bibliography|works cited|literature cited|citations)\s*(?:\n|$)/i;
 
+
+/* Helper functions */
+
 /**
  * Counts the number of whitespace-delimited words in a string.
  */
 function countWords(text: string): number {
     return text.split(/\s+/).filter((word: string) => word.length > 0).length;
-}
-
-/**
- * Removes the references section from extracted PDF text, if one is found.
- */
-function stripReferences(text: string): string {
-    const match = text.search(REFERENCE_SECTION_PATTERN);
-    if (match === -1) {
-        return text;
-    }
-    return text.slice(0, match);
-}
-
-/**
- * Builds a cache key for a PDF URI and reference-counting mode.
- */
-function getCacheKey(uri: vscode.Uri, ignoreReferences: boolean): string {
-    return `${uri.toString()}|ignoreRefs=${ignoreReferences}`;
-}
-
-/**
- * Reads a PDF file and returns its extracted text content.
- */
-async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
-    const pdf = require('pdf-parse') as PdfParseFn;
-    const fileData = await vscode.workspace.fs.readFile(fileUri);
-    const pdfData = await pdf(Buffer.from(fileData));
-    return pdfData.text || '';
 }
 
 /**
@@ -54,84 +29,13 @@ async function countWordsInPdf(fileUri: vscode.Uri, ignoreReferences: boolean): 
 }
 
 /**
- * Returns the file URI represented by a tab, when available.
+ * Reads a PDF file and returns its extracted text content.
  */
-function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
-    const input = tab.input;
-
-    if (input instanceof vscode.TabInputText) {
-        return input.uri;
-    }
-    if (input instanceof vscode.TabInputCustom) {
-        return input.uri;
-    }
-    if (input instanceof vscode.TabInputTextDiff) {
-        return input.modified;
-    }
-
-    if (typeof input === 'object' && input !== null && 'uri' in input) {
-        const uri = (input as { uri?: vscode.Uri }).uri;
-        if (uri && typeof uri.fsPath === 'string') {
-            return uri;
-        }
-    }
-
-    return undefined;
-}
-
-/**
- * Returns whether a URI points to a PDF file.
- */
-function isPdfUri(uri: vscode.Uri): boolean {
-    return uri.fsPath.toLowerCase().endsWith('.pdf');
-}
-
-/**
- * Extracts a PDF filename from a tab label, if present.
- */
-function getPdfFileNameFromTabLabel(label: string): string | undefined {
-    const match = label.match(/([^\\/:*?"<>|]+\.pdf)\b/i);
-    return match?.[1];
-}
-
-/**
- * Resolves a PDF URI from a tab label using workspace paths and search.
- */
-async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | undefined> {
-    const fileName = getPdfFileNameFromTabLabel(label);
-    if (!fileName) {
-        return undefined;
-    }
-
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (workspaceFolders?.length === 1) {
-        const candidate = vscode.Uri.joinPath(workspaceFolders[0].uri, fileName);
-        try {
-            await vscode.workspace.fs.stat(candidate);
-            return candidate;
-        } catch {
-            // Fall through to workspace search.
-        }
-    }
-
-    const matches = await vscode.workspace.findFiles(`**/${fileName}`, '**/node_modules/**', 2);
-    if (matches.length === 1) {
-        return matches[0];
-    }
-
-    return undefined;
-}
-
-/**
- * Returns the PDF URI for a tab from its input or label.
- */
-async function getPdfUriFromTab(tab: vscode.Tab): Promise<vscode.Uri | undefined> {
-    const uri = getTabUri(tab);
-    if (uri && isPdfUri(uri)) {
-        return uri;
-    }
-
-    return resolvePdfUriFromTabLabel(tab.label);
+async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
+    const pdf = require('pdf-parse') as PdfParseFn;
+    const fileData = await vscode.workspace.fs.readFile(fileUri);
+    const pdfData = await pdf(Buffer.from(fileData));
+    return pdfData.text || '';
 }
 
 /**
@@ -173,6 +77,108 @@ async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
 
     return undefined;
 }
+
+/**
+ * Builds a cache key for a PDF URI and reference-counting mode.
+ */
+function getCacheKey(uri: vscode.Uri, ignoreReferences: boolean): string {
+    return `${uri.toString()}|ignoreRefs=${ignoreReferences}`;
+}
+
+/**
+ * Extracts a PDF filename from a tab label, if present.
+ */
+function getPdfFileNameFromTabLabel(label: string): string | undefined {
+    const match = label.match(/([^\\/:*?"<>|]+\.pdf)\b/i);
+    return match?.[1];
+}
+
+/**
+ * Returns the PDF URI for a tab from its input or label.
+ */
+async function getPdfUriFromTab(tab: vscode.Tab): Promise<vscode.Uri | undefined> {
+    const uri = getTabUri(tab);
+    if (uri && isPdfUri(uri)) {
+        return uri;
+    }
+
+    return resolvePdfUriFromTabLabel(tab.label);
+}
+
+/**
+ * Returns the file URI represented by a tab, when available.
+ */
+function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
+    const input = tab.input;
+
+    if (input instanceof vscode.TabInputText) {
+        return input.uri;
+    }
+    if (input instanceof vscode.TabInputCustom) {
+        return input.uri;
+    }
+    if (input instanceof vscode.TabInputTextDiff) {
+        return input.modified;
+    }
+
+    if (typeof input === 'object' && input !== null && 'uri' in input) {
+        const uri = (input as { uri?: vscode.Uri }).uri;
+        if (uri && typeof uri.fsPath === 'string') {
+            return uri;
+        }
+    }
+
+    return undefined;
+}
+
+/**
+ * Returns whether a URI points to a PDF file.
+ */
+function isPdfUri(uri: vscode.Uri): boolean {
+    return uri.fsPath.toLowerCase().endsWith('.pdf');
+}
+
+/**
+ * Resolves a PDF URI from a tab label using workspace paths and search.
+ */
+async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | undefined> {
+    const fileName = getPdfFileNameFromTabLabel(label);
+    if (!fileName) {
+        return undefined;
+    }
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (workspaceFolders?.length === 1) {
+        const candidate = vscode.Uri.joinPath(workspaceFolders[0].uri, fileName);
+        try {
+            await vscode.workspace.fs.stat(candidate);
+            return candidate;
+        } catch {
+            // Fall through to workspace search.
+        }
+    }
+
+    const matches = await vscode.workspace.findFiles(`**/${fileName}`, '**/node_modules/**', 2);
+    if (matches.length === 1) {
+        return matches[0];
+    }
+
+    return undefined;
+}
+
+/**
+ * Removes the references section from extracted PDF text, if one is found.
+ */
+function stripReferences(text: string): string {
+    const match = text.search(REFERENCE_SECTION_PATTERN);
+    if (match === -1) {
+        return text;
+    }
+    return text.slice(0, match);
+}
+
+
+/* Main extension code */
 
 /**
  * Activates the extension and registers commands, listeners, and the status bar.
