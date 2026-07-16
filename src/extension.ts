@@ -7,10 +7,16 @@ const IGNORE_REFERENCES_KEY = 'pdfWordCount.ignoreReferences';
 const REFERENCE_SECTION_PATTERN =
     /(?:^|\n)\s*(?:references|bibliography|works cited|literature cited|citations)\s*(?:\n|$)/i;
 
+/**
+ * Counts the number of whitespace-delimited words in a string.
+ */
 function countWords(text: string): number {
     return text.split(/\s+/).filter((word: string) => word.length > 0).length;
 }
 
+/**
+ * Removes the references section from extracted PDF text, if one is found.
+ */
 function stripReferences(text: string): string {
     const match = text.search(REFERENCE_SECTION_PATTERN);
     if (match === -1) {
@@ -19,10 +25,16 @@ function stripReferences(text: string): string {
     return text.slice(0, match);
 }
 
+/**
+ * Builds a cache key for a PDF URI and reference-counting mode.
+ */
 function getCacheKey(uri: vscode.Uri, ignoreReferences: boolean): string {
     return `${uri.toString()}|ignoreRefs=${ignoreReferences}`;
 }
 
+/**
+ * Reads a PDF file and returns its extracted text content.
+ */
 async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
     const pdf = require('pdf-parse') as PdfParseFn;
     const fileData = await vscode.workspace.fs.readFile(fileUri);
@@ -30,6 +42,9 @@ async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
     return pdfData.text || '';
 }
 
+/**
+ * Parses a PDF and returns its word count, optionally excluding references.
+ */
 async function countWordsInPdf(fileUri: vscode.Uri, ignoreReferences: boolean): Promise<number> {
     let text = await extractPdfText(fileUri);
     if (ignoreReferences) {
@@ -38,6 +53,9 @@ async function countWordsInPdf(fileUri: vscode.Uri, ignoreReferences: boolean): 
     return countWords(text);
 }
 
+/**
+ * Returns the file URI represented by a tab, when available.
+ */
 function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
     const input = tab.input;
 
@@ -61,15 +79,24 @@ function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
     return undefined;
 }
 
+/**
+ * Returns whether a URI points to a PDF file.
+ */
 function isPdfUri(uri: vscode.Uri): boolean {
     return uri.fsPath.toLowerCase().endsWith('.pdf');
 }
 
+/**
+ * Extracts a PDF filename from a tab label, if present.
+ */
 function getPdfFileNameFromTabLabel(label: string): string | undefined {
     const match = label.match(/([^\\/:*?"<>|]+\.pdf)\b/i);
     return match?.[1];
 }
 
+/**
+ * Resolves a PDF URI from a tab label using workspace paths and search.
+ */
 async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | undefined> {
     const fileName = getPdfFileNameFromTabLabel(label);
     if (!fileName) {
@@ -95,6 +122,9 @@ async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | un
     return undefined;
 }
 
+/**
+ * Returns the PDF URI for a tab from its input or label.
+ */
 async function getPdfUriFromTab(tab: vscode.Tab): Promise<vscode.Uri | undefined> {
     const uri = getTabUri(tab);
     if (uri && isPdfUri(uri)) {
@@ -104,6 +134,9 @@ async function getPdfUriFromTab(tab: vscode.Tab): Promise<vscode.Uri | undefined
     return resolvePdfUriFromTabLabel(tab.label);
 }
 
+/**
+ * Returns the URI of the PDF that should currently drive the status bar.
+ */
 async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
     for (const group of vscode.window.tabGroups.all) {
         const candidateTabs = [
@@ -141,16 +174,25 @@ async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
     return undefined;
 }
 
+/**
+ * Activates the extension and registers commands, listeners, and the status bar.
+ */
 export function activate(context: vscode.ExtensionContext) {
     const wordCountCache = new Map<string, number>();
     let updateSequence = 0;
     let updateTimer: ReturnType<typeof setTimeout> | undefined;
     const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
 
+    /**
+     * Returns whether reference sections should be excluded from word counts.
+     */
     function getIgnoreReferences(): boolean {
         return context.globalState.get<boolean>(IGNORE_REFERENCES_KEY, false);
     }
 
+    /**
+     * Persists the ignore-references setting across editor sessions.
+     */
     async function setIgnoreReferences(value: boolean): Promise<void> {
         await context.globalState.update(IGNORE_REFERENCES_KEY, value);
     }
@@ -163,6 +205,9 @@ export function activate(context: vscode.ExtensionContext) {
     statusBarItem.command = 'pdf-word-count.showOptions';
     context.subscriptions.push(statusBarItem);
 
+    /**
+     * Builds the hover tooltip shown for the status bar word count.
+     */
     function buildStatusBarTooltip(
         fileName: string,
         wordCount: number,
@@ -182,6 +227,9 @@ export function activate(context: vscode.ExtensionContext) {
         return tooltip;
     }
 
+    /**
+     * Updates the status bar text and tooltip for a completed word count.
+     */
     function renderStatusBar(
         fileName: string,
         wordCount: number,
@@ -192,6 +240,9 @@ export function activate(context: vscode.ExtensionContext) {
         statusBarItem.tooltip = buildStatusBarTooltip(fileName, wordCount, ignoreReferences);
     }
 
+    /**
+     * Refreshes the status bar for the active PDF, using the cache when possible.
+     */
     async function updateStatusBar(): Promise<void> {
         const pdfUri = await getActivePdfUri();
         if (!pdfUri) {
@@ -231,6 +282,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
 
+    /**
+     * Debounces status bar refreshes to avoid redundant PDF parsing.
+     */
     function requestStatusBarUpdate(delay = 0): void {
         if (updateTimer) {
             clearTimeout(updateTimer);
@@ -242,6 +296,9 @@ export function activate(context: vscode.ExtensionContext) {
         }, delay);
     }
 
+    /**
+     * Retries status bar updates during startup while tabs and workspace state settle.
+     */
     function scheduleInitialStatusBarUpdates(): void {
         for (const delay of [0, 100, 250, 500, 1000, 2000]) {
             const timer = setTimeout(() => {
@@ -395,4 +452,7 @@ export function activate(context: vscode.ExtensionContext) {
     scheduleInitialStatusBarUpdates();
 }
 
+/**
+ * Deactivates the extension.
+ */
 export function deactivate() {}
