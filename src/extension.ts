@@ -76,6 +76,17 @@ async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | un
         return undefined;
     }
 
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (workspaceFolders?.length === 1) {
+        const candidate = vscode.Uri.joinPath(workspaceFolders[0].uri, fileName);
+        try {
+            await vscode.workspace.fs.stat(candidate);
+            return candidate;
+        } catch {
+            // Fall through to workspace search.
+        }
+    }
+
     const matches = await vscode.workspace.findFiles(`**/${fileName}`, '**/node_modules/**', 2);
     if (matches.length === 1) {
         return matches[0];
@@ -84,18 +95,42 @@ async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | un
     return undefined;
 }
 
-async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
-    const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-    if (activeTab) {
-        const uri = getTabUri(activeTab);
-        if (uri && isPdfUri(uri)) {
-            return uri;
-        }
+async function getPdfUriFromTab(tab: vscode.Tab): Promise<vscode.Uri | undefined> {
+    const uri = getTabUri(tab);
+    if (uri && isPdfUri(uri)) {
+        return uri;
+    }
 
-        const labelUri = await resolvePdfUriFromTabLabel(activeTab.label);
-        if (labelUri) {
-            return labelUri;
+    return resolvePdfUriFromTabLabel(tab.label);
+}
+
+async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
+    for (const group of vscode.window.tabGroups.all) {
+        const candidateTabs = [
+            group.activeTab,
+            ...group.tabs.filter((tab) => tab.isActive)
+        ].filter((tab): tab is vscode.Tab => tab !== undefined);
+
+        for (const tab of candidateTabs) {
+            const uri = await getPdfUriFromTab(tab);
+            if (uri) {
+                return uri;
+            }
         }
+    }
+
+    const pdfUris: vscode.Uri[] = [];
+    for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+            const uri = await getPdfUriFromTab(tab);
+            if (uri) {
+                pdfUris.push(uri);
+            }
+        }
+    }
+
+    if (pdfUris.length === 1) {
+        return pdfUris[0];
     }
 
     const editor = vscode.window.activeTextEditor;
@@ -109,6 +144,8 @@ async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
 export function activate(context: vscode.ExtensionContext) {
     const wordCountCache = new Map<string, number>();
     let updateSequence = 0;
+    let updateTimer: ReturnType<typeof setTimeout> | undefined;
+    const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
 
     function getIgnoreReferences(): boolean {
         return context.globalState.get<boolean>(IGNORE_REFERENCES_KEY, false);
@@ -191,6 +228,26 @@ export function activate(context: vscode.ExtensionContext) {
 
             statusBarItem.text = '$(file-pdf) PDF: Count failed';
             statusBarItem.tooltip = `Failed to count words in ${fileName}: ${err}`;
+        }
+    }
+
+    function requestStatusBarUpdate(delay = 0): void {
+        if (updateTimer) {
+            clearTimeout(updateTimer);
+        }
+
+        updateTimer = setTimeout(() => {
+            updateTimer = undefined;
+            void updateStatusBar();
+        }, delay);
+    }
+
+    function scheduleInitialStatusBarUpdates(): void {
+        for (const delay of [0, 100, 250, 500, 1000, 2000]) {
+            const timer = setTimeout(() => {
+                requestStatusBarUpdate();
+            }, delay);
+            startupRetryTimers.push(timer);
         }
     }
 
@@ -309,14 +366,33 @@ export function activate(context: vscode.ExtensionContext) {
         countWordsCommand,
         pdfWatcher,
         vscode.window.onDidChangeActiveTextEditor(() => {
-            void updateStatusBar();
+            requestStatusBarUpdate();
+        }),
+        vscode.window.onDidChangeVisibleTextEditors(() => {
+            requestStatusBarUpdate();
+        }),
+        vscode.window.onDidChangeWindowState(() => {
+            requestStatusBarUpdate();
         }),
         vscode.window.tabGroups.onDidChangeTabs(() => {
-            void updateStatusBar();
-        })
+            requestStatusBarUpdate();
+        }),
+        vscode.window.tabGroups.onDidChangeTabGroups(() => {
+            requestStatusBarUpdate();
+        }),
+        {
+            dispose: () => {
+                if (updateTimer) {
+                    clearTimeout(updateTimer);
+                }
+                for (const timer of startupRetryTimers) {
+                    clearTimeout(timer);
+                }
+            }
+        }
     );
 
-    void updateStatusBar();
+    scheduleInitialStatusBarUpdates();
 }
 
 export function deactivate() {}
