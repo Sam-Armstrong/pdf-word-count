@@ -75,7 +75,8 @@ function getCacheKey(uri: vscode.Uri, options: CountingOptions): string {
         `abs=${options.ignoreAbstract}`,
         `toc=${options.ignoreTableOfContents}`,
         `app=${options.ignoreAppendices}`,
-        `refs=${options.ignoreReferences}`
+        `refs=${options.ignoreReferences}`,
+        `cap=${options.ignoreCaptions}`
     ].join('|');
 }
 
@@ -190,7 +191,8 @@ export function activate(context: vscode.ExtensionContext) {
                 false
             ),
             ignoreAppendices: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreAppendices, false),
-            ignoreReferences: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreReferences, false)
+            ignoreReferences: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreReferences, false),
+            ignoreCaptions: context.globalState.get<boolean>(COUNTING_OPTION_KEYS.ignoreCaptions, false)
         };
     }
 
@@ -427,6 +429,13 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    const toggleIgnoreCaptionsCommand = vscode.commands.registerCommand(
+        'pdf-word-count.toggleIgnoreCaptions',
+        async () => {
+            await toggleCountingOption('ignoreCaptions');
+        }
+    );
+
     const countWordsCommand = vscode.commands.registerCommand(
         'pdf-word-count.countWords',
         async (uri?: vscode.Uri) => {
@@ -487,6 +496,7 @@ export function activate(context: vscode.ExtensionContext) {
         toggleIgnoreAbstractCommand,
         toggleIgnoreTableOfContentsCommand,
         toggleIgnoreAppendicesCommand,
+        toggleIgnoreCaptionsCommand,
         countWordsCommand,
         pdfWatcher,
         vscode.window.onDidChangeActiveTextEditor(() => {

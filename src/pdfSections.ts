@@ -10,6 +10,7 @@ export type CountingOptions = {
     ignoreTableOfContents: boolean;
     ignoreAppendices: boolean;
     ignoreReferences: boolean;
+    ignoreCaptions: boolean;
 };
 
 export type CountingOptionKey = keyof CountingOptions;
@@ -28,7 +29,8 @@ export const COUNTING_OPTION_KEYS: Record<CountingOptionKey, string> = {
     ignoreAbstract: 'pdfWordCount.ignoreAbstract',
     ignoreTableOfContents: 'pdfWordCount.ignoreTableOfContents',
     ignoreAppendices: 'pdfWordCount.ignoreAppendices',
-    ignoreReferences: 'pdfWordCount.ignoreReferences'
+    ignoreReferences: 'pdfWordCount.ignoreReferences',
+    ignoreCaptions: 'pdfWordCount.ignoreCaptions'
 };
 
 export const COUNTING_OPTION_DETAILS: Record<CountingOptionKey, { label: string; detail: string; shortLabel: string }> = {
@@ -51,6 +53,11 @@ export const COUNTING_OPTION_DETAILS: Record<CountingOptionKey, { label: string;
         label: 'Ignore references',
         detail: 'Exclude the references/bibliography section from the word count',
         shortLabel: 'no refs'
+    },
+    ignoreCaptions: {
+        label: 'Ignore figure/table captions',
+        detail: 'Exclude figure and table caption lines from the word count',
+        shortLabel: 'no captions'
     }
 };
 
@@ -64,6 +71,10 @@ const POST_REFERENCES_APPENDIX_START_PATTERN =
 // allow numbered headings such as "6.  REFERENCES"
 const REFERENCE_SECTION_PATTERN =
     /(?:^|\n)\s*(?:\d+\.?\s*)?(?:references|bibliography|works cited|literature cited|citations)\s*(?:\n|$)/i;
+// line-start figure/table captions such as "Figure 1:" or "Table 3."
+const CAPTION_START_PATTERN =
+    /^(?:Figure|Fig\.?|Table)\s+\d+(?:\.\d+)*[a-z]?(?:\s*[:\.]|\s*[-–—]|\s*\)|\s*$)/i;
+const MAX_CAPTION_CONTINUATION_LINES = 4;
 
 /**
  * Returns a short tooltip label for a section strip attempt.
@@ -159,6 +170,89 @@ export function isTocEntryLine(line: string): boolean {
         return true;
     }
     return false;
+}
+
+/**
+ * Returns whether a line starts a figure or table caption.
+ */
+export function isCaptionStartLine(line: string): boolean {
+    return CAPTION_START_PATTERN.test(line.trim());
+}
+
+/**
+ * Returns whether a line is a wrapped continuation of the current caption.
+ */
+export function isCaptionContinuationLine(line: string, continuationLinesIncluded: number): boolean {
+    const trimmed = line.trim();
+    if (!trimmed || continuationLinesIncluded >= MAX_CAPTION_CONTINUATION_LINES) {
+        return false;
+    }
+    if (isCaptionStartLine(trimmed) || isHeadingLine(trimmed)) {
+        return false;
+    }
+    if (/^\[?\d+\]/.test(trimmed)) {
+        return false;
+    }
+    if (trimmed.length > 100) {
+        return false;
+    }
+    // skip code blocks and table header rows that follow captions in extracted text
+    if (/^(?:void|int|float|double|for|if|return|#include|System|Node)\b/.test(trimmed)) {
+        return false;
+    }
+    if (/^\d+\.?\s+[A-Z]/.test(trimmed)) {
+        return false;
+    }
+    // stop once the caption ends with a complete sentence rather than a hyphen wrap
+    if (/[.!?]\s*$/.test(trimmed) && trimmed.length > 35 && /\s[a-z]{3,}/.test(trimmed) && !/-\s*$/.test(trimmed)) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Removes figure and table caption lines from extracted PDF text.
+ */
+export function stripCaptions(text: string): StripResult {
+    const parts = text.split(/(\n)/);
+    let result = '';
+    let inCaption = false;
+    let continuationLines = 0;
+    let removedAny = false;
+
+    for (const part of parts) {
+        if (part === '\n') {
+            // blank lines mark the end of a caption block
+            if (inCaption) {
+                inCaption = false;
+                continuationLines = 0;
+            }
+            result += part;
+            continue;
+        }
+
+        if (isCaptionStartLine(part)) {
+            removedAny = true;
+            inCaption = true;
+            continuationLines = 0;
+            continue;
+        }
+
+        if (inCaption && isCaptionContinuationLine(part, continuationLines)) {
+            removedAny = true;
+            continuationLines += 1;
+            continue;
+        }
+
+        inCaption = false;
+        continuationLines = 0;
+        result += part;
+    }
+
+    return {
+        text: result,
+        status: removedAny ? 'stripped' : 'notFound'
+    };
 }
 
 /**
@@ -390,6 +484,11 @@ export function applySectionExclusions(
         const stripped = stripReferences(result);
         result = stripped.text;
         stripStatuses.ignoreReferences = stripped.status;
+    }
+    if (options.ignoreCaptions) {
+        const stripped = stripCaptions(result);
+        result = stripped.text;
+        stripStatuses.ignoreCaptions = stripped.status;
     }
 
     return { text: result, stripStatuses };

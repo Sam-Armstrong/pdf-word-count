@@ -38,6 +38,10 @@
       {
         "command": "pdf-word-count.toggleIgnoreAppendices",
         "title": "Toggle Ignore Appendices in PDF Word Count"
+      },
+      {
+        "command": "pdf-word-count.toggleIgnoreCaptions",
+        "title": "Toggle Ignore Figure/Table Captions in PDF Word Count"
       }
     ],
     "menus": {
