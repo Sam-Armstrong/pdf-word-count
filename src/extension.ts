@@ -3,6 +3,12 @@ import * as path from 'path';
 
 type PdfParseFn = (data: Buffer) => Promise<{ text: string }>;
 
+type PdfStats = {
+    wordCount: number;
+    charCount: number;
+    charCountExcludingSpaces: number;
+};
+
 const IGNORE_REFERENCES_KEY = 'pdfWordCount.ignoreReferences';
 const REFERENCE_SECTION_PATTERN =
     /(?:^|\n)\s*(?:references|bibliography|works cited|literature cited|citations)\s*(?:\n|$)/i;
@@ -11,21 +17,24 @@ const REFERENCE_SECTION_PATTERN =
 /* Helper functions */
 
 /**
+ * Counts the number of characters in a string.
+ */
+function countCharacters(text: string): number {
+    return text.length;
+}
+
+/**
+ * Counts the number of characters in a string, excluding whitespace.
+ */
+function countCharactersExcludingSpaces(text: string): number {
+    return text.replace(/\s/g, '').length;
+}
+
+/**
  * Counts the number of whitespace-delimited words in a string.
  */
 function countWords(text: string): number {
     return text.split(/\s+/).filter((word: string) => word.length > 0).length;
-}
-
-/**
- * Parses a PDF and returns its word count, optionally excluding references.
- */
-async function countWordsInPdf(fileUri: vscode.Uri, ignoreReferences: boolean): Promise<number> {
-    let text = await extractPdfText(fileUri);
-    if (ignoreReferences) {
-        text = stripReferences(text);
-    }
-    return countWords(text);
 }
 
 /**
@@ -91,6 +100,28 @@ function getCacheKey(uri: vscode.Uri, ignoreReferences: boolean): string {
 function getPdfFileNameFromTabLabel(label: string): string | undefined {
     const match = label.match(/([^\\/:*?"<>|]+\.pdf)\b/i);
     return match?.[1];
+}
+
+/**
+ * Parses a PDF and returns its word and character counts, optionally excluding references.
+ */
+async function getPdfStats(fileUri: vscode.Uri, ignoreReferences: boolean): Promise<PdfStats> {
+    let text = await extractPdfText(fileUri);
+    if (ignoreReferences) {
+        text = stripReferences(text);
+    }
+    return getPdfStatsFromText(text);
+}
+
+/**
+ * Derives word and character counts from extracted PDF text.
+ */
+function getPdfStatsFromText(text: string): PdfStats {
+    return {
+        wordCount: countWords(text),
+        charCount: countCharacters(text),
+        charCountExcludingSpaces: countCharactersExcludingSpaces(text)
+    };
 }
 
 /**
@@ -184,7 +215,7 @@ function stripReferences(text: string): string {
  * Activates the extension and registers commands, listeners, and the status bar.
  */
 export function activate(context: vscode.ExtensionContext) {
-    const wordCountCache = new Map<string, number>();
+    const pdfStatsCache = new Map<string, PdfStats>();
     let updateSequence = 0;
     let updateTimer: ReturnType<typeof setTimeout> | undefined;
     const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
@@ -216,7 +247,7 @@ export function activate(context: vscode.ExtensionContext) {
      */
     function buildStatusBarTooltip(
         fileName: string,
-        wordCount: number,
+        stats: PdfStats,
         ignoreReferences: boolean
     ): vscode.MarkdownString {
         const tooltip = new vscode.MarkdownString(undefined, true);
@@ -224,7 +255,11 @@ export function activate(context: vscode.ExtensionContext) {
 
         const modeLabel = ignoreReferences ? 'references excluded' : 'references included';
         tooltip.appendMarkdown(`**${fileName}**\n\n`);
-        tooltip.appendMarkdown(`${wordCount.toLocaleString()} words (${modeLabel})\n\n`);
+        tooltip.appendMarkdown(`${stats.wordCount.toLocaleString()} words (${modeLabel})\n\n`);
+        tooltip.appendMarkdown(`${stats.charCount.toLocaleString()} characters\n\n`);
+        tooltip.appendMarkdown(
+            `${stats.charCountExcludingSpaces.toLocaleString()} characters excluding spaces\n\n`
+        );
         tooltip.appendMarkdown('---\n\n');
         tooltip.appendMarkdown(
             `$(${ignoreReferences ? 'check' : 'circle-outline'}) Ignore references — **${ignoreReferences ? 'On' : 'Off'}**\n\n`
@@ -238,12 +273,12 @@ export function activate(context: vscode.ExtensionContext) {
      */
     function renderStatusBar(
         fileName: string,
-        wordCount: number,
+        stats: PdfStats,
         ignoreReferences: boolean
     ): void {
         const refsSuffix = ignoreReferences ? ' · no refs' : '';
-        statusBarItem.text = `$(file-pdf) PDF: ${wordCount.toLocaleString()} words${refsSuffix}`;
-        statusBarItem.tooltip = buildStatusBarTooltip(fileName, wordCount, ignoreReferences);
+        statusBarItem.text = `$(file-pdf) PDF: ${stats.wordCount.toLocaleString()} words${refsSuffix}`;
+        statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats, ignoreReferences);
     }
 
     /**
@@ -265,19 +300,19 @@ export function activate(context: vscode.ExtensionContext) {
         statusBarItem.tooltip = `Counting words in ${fileName}`;
         statusBarItem.show();
 
-        if (wordCountCache.has(cacheKey)) {
-            renderStatusBar(fileName, wordCountCache.get(cacheKey)!, ignoreReferences);
+        if (pdfStatsCache.has(cacheKey)) {
+            renderStatusBar(fileName, pdfStatsCache.get(cacheKey)!, ignoreReferences);
             return;
         }
 
         try {
-            const wordCount = await countWordsInPdf(pdfUri, ignoreReferences);
+            const stats = await getPdfStats(pdfUri, ignoreReferences);
             if (sequence !== updateSequence) {
                 return;
             }
 
-            wordCountCache.set(cacheKey, wordCount);
-            renderStatusBar(fileName, wordCount, ignoreReferences);
+            pdfStatsCache.set(cacheKey, stats);
+            renderStatusBar(fileName, stats, ignoreReferences);
         } catch (err) {
             if (sequence !== updateSequence) {
                 return;
@@ -347,13 +382,13 @@ export function activate(context: vscode.ExtensionContext) {
             if (selection.action === 'toggle') {
                 const nextValue = !ignoreReferences;
                 await setIgnoreReferences(nextValue);
-                wordCountCache.clear();
+                pdfStatsCache.clear();
                 await updateStatusBar();
                 return;
             }
 
             if (selection.action === 'recount') {
-                wordCountCache.clear();
+                pdfStatsCache.clear();
                 await updateStatusBar();
             }
         }
@@ -363,7 +398,7 @@ export function activate(context: vscode.ExtensionContext) {
         'pdf-word-count.toggleIgnoreReferences',
         async () => {
             await setIgnoreReferences(!getIgnoreReferences());
-            wordCountCache.clear();
+            pdfStatsCache.clear();
             await updateStatusBar();
         }
     );
@@ -389,13 +424,13 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage('Parsing PDF...');
 
                 const ignoreReferences = getIgnoreReferences();
-                const wordCount = await countWordsInPdf(fileUri, ignoreReferences);
-                wordCountCache.set(getCacheKey(fileUri, ignoreReferences), wordCount);
+                const stats = await getPdfStats(fileUri, ignoreReferences);
+                pdfStatsCache.set(getCacheKey(fileUri, ignoreReferences), stats);
 
                 const fileName = path.basename(fileUri.fsPath);
                 const modeLabel = ignoreReferences ? 'excluding references' : 'including references';
                 vscode.window.showInformationMessage(
-                    `"${fileName}" contains ${wordCount.toLocaleString()} words (${modeLabel}).`
+                    `"${fileName}" contains ${stats.wordCount.toLocaleString()} words (${modeLabel}).`
                 );
 
                 if ((await getActivePdfUri())?.toString() === fileUri.toString()) {
@@ -409,16 +444,16 @@ export function activate(context: vscode.ExtensionContext) {
 
     const pdfWatcher = vscode.workspace.createFileSystemWatcher('**/*.pdf');
     pdfWatcher.onDidChange((uri) => {
-        for (const key of wordCountCache.keys()) {
+        for (const key of pdfStatsCache.keys()) {
             if (key.startsWith(uri.toString())) {
-                wordCountCache.delete(key);
+                pdfStatsCache.delete(key);
             }
         }
     });
     pdfWatcher.onDidDelete((uri) => {
-        for (const key of wordCountCache.keys()) {
+        for (const key of pdfStatsCache.keys()) {
             if (key.startsWith(uri.toString())) {
-                wordCountCache.delete(key);
+                pdfStatsCache.delete(key);
             }
         }
     });
