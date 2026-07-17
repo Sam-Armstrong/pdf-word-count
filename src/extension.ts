@@ -1,57 +1,20 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-
-type PdfParseFn = (data: Buffer) => Promise<{ text: string }>;
-
-type PdfStats = {
-    wordCount: number;
-    charCount: number;
-    charCountExcludingSpaces: number;
-};
-
-const PUNCTUATION_ONLY_PATTERN = /^[\p{P}]+$/u;
+import {
+    extractPdfTextFromBuffer,
+    getPdfStatsFromText,
+    type PdfStats
+} from './pdfText';
 
 
 /* Helper functions */
 
 /**
- * Counts the number of characters in a string, including punctuation.
- */
-function countCharacters(text: string): number {
-    return text.length;
-}
-
-/**
- * Counts the number of characters in a string, excluding whitespace.
- */
-function countCharactersExcludingSpaces(text: string): number {
-    return text.replace(/\s/g, '').length;
-}
-
-/**
- * Counts the number of whitespace-delimited words in a string.
- * Tokens that are only punctuation are skipped.
- */
-function countWords(text: string): number {
-    return text.split(/\s+/).filter((word: string) => {
-        if (word.length === 0) {
-            return false;
-        }
-        if (PUNCTUATION_ONLY_PATTERN.test(word)) {
-            return false;
-        }
-        return true;
-    }).length;
-}
-
-/**
  * Reads a PDF file and returns its extracted text content.
  */
 async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
-    const pdf = require('pdf-parse') as PdfParseFn;
     const fileData = await vscode.workspace.fs.readFile(fileUri);
-    const pdfData = await pdf(Buffer.from(fileData));
-    return pdfData.text || '';
+    return extractPdfTextFromBuffer(fileData);
 }
 
 /**
@@ -108,17 +71,6 @@ function getPdfFileNameFromTabLabel(label: string): string | undefined {
 async function getPdfStats(fileUri: vscode.Uri): Promise<PdfStats> {
     const text = await extractPdfText(fileUri);
     return getPdfStatsFromText(text);
-}
-
-/**
- * Derives word and character counts from extracted PDF text.
- */
-function getPdfStatsFromText(text: string): PdfStats {
-    return {
-        wordCount: countWords(text),
-        charCount: countCharacters(text),
-        charCountExcludingSpaces: countCharactersExcludingSpaces(text)
-    };
 }
 
 /**

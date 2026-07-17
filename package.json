@@ -41,12 +41,13 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "compile-tests": "tsc -p . --outDir out",
+    "compile-tests": "rm -rf out && tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:pdf": "npm run compile-tests && mocha --ui tdd out/test/pdfText.test.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -56,6 +57,7 @@
     "@vscode/test-electron": "^3.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
+    "mocha": "^11.7.6",
     "npm-run-all": "^4.1.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1"
@@ -65,6 +67,6 @@
     "serialize-javascript": "^7.0.6"
   },
   "dependencies": {
-    "pdf-parse": "^1.1.1"
+    "pdfjs-dist": "^6.1.200"
   }
 }

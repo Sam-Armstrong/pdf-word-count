@@ -35,9 +35,18 @@ async function main() {
 		sourcesContent: false,
 		platform: 'node',
 		outfile: 'dist/extension.js',
-		external: ['vscode', 'pdf-parse'],
+		external: ['vscode'],
 		logLevel: 'silent',
 		plugins: [
+			{
+				name: 'external-pdfjs',
+				setup(build) {
+					build.onResolve({ filter: /^pdfjs-dist(\/|$)/ }, (args) => ({
+						path: args.path,
+						external: true,
+					}));
+				},
+			},
 			/* add to the end of plugins array */
 			esbuildProblemMatcherPlugin,
 		],
