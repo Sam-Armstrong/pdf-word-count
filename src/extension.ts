@@ -256,9 +256,8 @@ export function activate(context: vscode.ExtensionContext) {
         const tooltip = new vscode.MarkdownString(undefined, true);
         tooltip.isTrusted = true;
 
-        const modeLabel = ignorePunctuation ? 'punctuation excluded' : 'punctuation included';
         tooltip.appendMarkdown(`**${fileName}**\n\n`);
-        tooltip.appendMarkdown(`${stats.wordCount.toLocaleString()} words (${modeLabel})\n\n`);
+        tooltip.appendMarkdown(`${stats.wordCount.toLocaleString()} words\n\n`);
         tooltip.appendMarkdown(`${stats.charCount.toLocaleString()} characters\n\n`);
         tooltip.appendMarkdown(
             `${stats.charCountExcludingSpaces.toLocaleString()} characters excluding spaces\n\n`
@@ -267,7 +266,6 @@ export function activate(context: vscode.ExtensionContext) {
         tooltip.appendMarkdown(
             `$(${ignorePunctuation ? 'check' : 'circle-outline'}) Ignore punctuation — **${ignorePunctuation ? 'On' : 'Off'}**\n\n`
         );
-        tooltip.appendMarkdown('Click to toggle punctuation counting');
         return tooltip;
     }
 
@@ -279,8 +277,7 @@ export function activate(context: vscode.ExtensionContext) {
         stats: PdfStats,
         ignorePunctuation: boolean
     ): void {
-        const punctSuffix = ignorePunctuation ? ' · no punct' : '';
-        statusBarItem.text = `$(file-pdf) PDF: ${stats.wordCount.toLocaleString()} words${punctSuffix}`;
+        statusBarItem.text = `$(file-pdf) ${stats.wordCount.toLocaleString()} words`;
         statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats, ignorePunctuation);
     }
 
