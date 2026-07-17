@@ -9,32 +9,42 @@ type PdfStats = {
     charCountExcludingSpaces: number;
 };
 
-const IGNORE_REFERENCES_KEY = 'pdfWordCount.ignoreReferences';
-const REFERENCE_SECTION_PATTERN =
-    /(?:^|\n)\s*(?:references|bibliography|works cited|literature cited|citations)\s*(?:\n|$)/i;
+const IGNORE_PUNCTUATION_KEY = 'pdfWordCount.ignorePunctuation';
+const PUNCTUATION_PATTERN = /\p{P}/gu;
+const PUNCTUATION_ONLY_PATTERN = /^[\p{P}]+$/u;
 
 
 /* Helper functions */
 
 /**
- * Counts the number of characters in a string.
+ * Counts the number of characters in a string, optionally excluding punctuation.
  */
-function countCharacters(text: string): number {
-    return text.length;
+function countCharacters(text: string, ignorePunctuation: boolean): number {
+    return (ignorePunctuation ? stripPunctuation(text) : text).length;
 }
 
 /**
- * Counts the number of characters in a string, excluding whitespace.
+ * Counts the number of characters in a string, excluding whitespace and optionally punctuation.
  */
-function countCharactersExcludingSpaces(text: string): number {
-    return text.replace(/\s/g, '').length;
+function countCharactersExcludingSpaces(text: string, ignorePunctuation: boolean): number {
+    const prepared = ignorePunctuation ? stripPunctuation(text) : text;
+    return prepared.replace(/\s/g, '').length;
 }
 
 /**
  * Counts the number of whitespace-delimited words in a string.
+ * When ignorePunctuation is enabled, tokens that are only punctuation are skipped.
  */
-function countWords(text: string): number {
-    return text.split(/\s+/).filter((word: string) => word.length > 0).length;
+function countWords(text: string, ignorePunctuation: boolean): number {
+    return text.split(/\s+/).filter((word: string) => {
+        if (word.length === 0) {
+            return false;
+        }
+        if (ignorePunctuation && PUNCTUATION_ONLY_PATTERN.test(word)) {
+            return false;
+        }
+        return true;
+    }).length;
 }
 
 /**
@@ -88,10 +98,10 @@ async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
 }
 
 /**
- * Builds a cache key for a PDF URI and reference-counting mode.
+ * Builds a cache key for a PDF URI and punctuation-counting mode.
  */
-function getCacheKey(uri: vscode.Uri, ignoreReferences: boolean): string {
-    return `${uri.toString()}|ignoreRefs=${ignoreReferences}`;
+function getCacheKey(uri: vscode.Uri, ignorePunctuation: boolean): string {
+    return `${uri.toString()}|ignorePunct=${ignorePunctuation}`;
 }
 
 /**
@@ -103,24 +113,21 @@ function getPdfFileNameFromTabLabel(label: string): string | undefined {
 }
 
 /**
- * Parses a PDF and returns its word and character counts, optionally excluding references.
+ * Parses a PDF and returns its word and character counts, optionally ignoring punctuation.
  */
-async function getPdfStats(fileUri: vscode.Uri, ignoreReferences: boolean): Promise<PdfStats> {
-    let text = await extractPdfText(fileUri);
-    if (ignoreReferences) {
-        text = stripReferences(text);
-    }
-    return getPdfStatsFromText(text);
+async function getPdfStats(fileUri: vscode.Uri, ignorePunctuation: boolean): Promise<PdfStats> {
+    const text = await extractPdfText(fileUri);
+    return getPdfStatsFromText(text, ignorePunctuation);
 }
 
 /**
  * Derives word and character counts from extracted PDF text.
  */
-function getPdfStatsFromText(text: string): PdfStats {
+function getPdfStatsFromText(text: string, ignorePunctuation: boolean): PdfStats {
     return {
-        wordCount: countWords(text),
-        charCount: countCharacters(text),
-        charCountExcludingSpaces: countCharactersExcludingSpaces(text)
+        wordCount: countWords(text, ignorePunctuation),
+        charCount: countCharacters(text, ignorePunctuation),
+        charCountExcludingSpaces: countCharactersExcludingSpaces(text, ignorePunctuation)
     };
 }
 
@@ -198,14 +205,10 @@ async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | un
 }
 
 /**
- * Removes the references section from extracted PDF text, if one is found.
+ * Removes punctuation characters from text.
  */
-function stripReferences(text: string): string {
-    const match = text.search(REFERENCE_SECTION_PATTERN);
-    if (match === -1) {
-        return text;
-    }
-    return text.slice(0, match);
+function stripPunctuation(text: string): string {
+    return text.replace(PUNCTUATION_PATTERN, '');
 }
 
 
@@ -221,17 +224,17 @@ export function activate(context: vscode.ExtensionContext) {
     const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
 
     /**
-     * Returns whether reference sections should be excluded from word counts.
+     * Returns whether punctuation should be excluded from word and character counts.
      */
-    function getIgnoreReferences(): boolean {
-        return context.globalState.get<boolean>(IGNORE_REFERENCES_KEY, false);
+    function getIgnorePunctuation(): boolean {
+        return context.globalState.get<boolean>(IGNORE_PUNCTUATION_KEY, true);
     }
 
     /**
-     * Persists the ignore-references setting across editor sessions.
+     * Persists the ignore-punctuation setting across editor sessions.
      */
-    async function setIgnoreReferences(value: boolean): Promise<void> {
-        await context.globalState.update(IGNORE_REFERENCES_KEY, value);
+    async function setIgnorePunctuation(value: boolean): Promise<void> {
+        await context.globalState.update(IGNORE_PUNCTUATION_KEY, value);
     }
 
     const statusBarItem = vscode.window.createStatusBarItem(
@@ -248,12 +251,12 @@ export function activate(context: vscode.ExtensionContext) {
     function buildStatusBarTooltip(
         fileName: string,
         stats: PdfStats,
-        ignoreReferences: boolean
+        ignorePunctuation: boolean
     ): vscode.MarkdownString {
         const tooltip = new vscode.MarkdownString(undefined, true);
         tooltip.isTrusted = true;
 
-        const modeLabel = ignoreReferences ? 'references excluded' : 'references included';
+        const modeLabel = ignorePunctuation ? 'punctuation excluded' : 'punctuation included';
         tooltip.appendMarkdown(`**${fileName}**\n\n`);
         tooltip.appendMarkdown(`${stats.wordCount.toLocaleString()} words (${modeLabel})\n\n`);
         tooltip.appendMarkdown(`${stats.charCount.toLocaleString()} characters\n\n`);
@@ -262,9 +265,9 @@ export function activate(context: vscode.ExtensionContext) {
         );
         tooltip.appendMarkdown('---\n\n');
         tooltip.appendMarkdown(
-            `$(${ignoreReferences ? 'check' : 'circle-outline'}) Ignore references — **${ignoreReferences ? 'On' : 'Off'}**\n\n`
+            `$(${ignorePunctuation ? 'check' : 'circle-outline'}) Ignore punctuation — **${ignorePunctuation ? 'On' : 'Off'}**\n\n`
         );
-        tooltip.appendMarkdown('Click to toggle reference counting');
+        tooltip.appendMarkdown('Click to toggle punctuation counting');
         return tooltip;
     }
 
@@ -274,11 +277,11 @@ export function activate(context: vscode.ExtensionContext) {
     function renderStatusBar(
         fileName: string,
         stats: PdfStats,
-        ignoreReferences: boolean
+        ignorePunctuation: boolean
     ): void {
-        const refsSuffix = ignoreReferences ? ' · no refs' : '';
-        statusBarItem.text = `$(file-pdf) PDF: ${stats.wordCount.toLocaleString()} words${refsSuffix}`;
-        statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats, ignoreReferences);
+        const punctSuffix = ignorePunctuation ? ' · no punct' : '';
+        statusBarItem.text = `$(file-pdf) PDF: ${stats.wordCount.toLocaleString()} words${punctSuffix}`;
+        statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats, ignorePunctuation);
     }
 
     /**
@@ -291,8 +294,8 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        const ignoreReferences = getIgnoreReferences();
-        const cacheKey = getCacheKey(pdfUri, ignoreReferences);
+        const ignorePunctuation = getIgnorePunctuation();
+        const cacheKey = getCacheKey(pdfUri, ignorePunctuation);
         const fileName = path.basename(pdfUri.fsPath);
         const sequence = ++updateSequence;
 
@@ -301,18 +304,18 @@ export function activate(context: vscode.ExtensionContext) {
         statusBarItem.show();
 
         if (pdfStatsCache.has(cacheKey)) {
-            renderStatusBar(fileName, pdfStatsCache.get(cacheKey)!, ignoreReferences);
+            renderStatusBar(fileName, pdfStatsCache.get(cacheKey)!, ignorePunctuation);
             return;
         }
 
         try {
-            const stats = await getPdfStats(pdfUri, ignoreReferences);
+            const stats = await getPdfStats(pdfUri, ignorePunctuation);
             if (sequence !== updateSequence) {
                 return;
             }
 
             pdfStatsCache.set(cacheKey, stats);
-            renderStatusBar(fileName, stats, ignoreReferences);
+            renderStatusBar(fileName, stats, ignorePunctuation);
         } catch (err) {
             if (sequence !== updateSequence) {
                 return;
@@ -352,15 +355,15 @@ export function activate(context: vscode.ExtensionContext) {
     const showOptionsCommand = vscode.commands.registerCommand(
         'pdf-word-count.showOptions',
         async () => {
-            const ignoreReferences = getIgnoreReferences();
+            const ignorePunctuation = getIgnorePunctuation();
             type StatusBarOption = vscode.QuickPickItem & { action: 'toggle' | 'recount' };
             const selection = await vscode.window.showQuickPick<StatusBarOption>(
                 [
                     {
-                        label: `$(${ignoreReferences ? 'check' : 'circle-outline'}) Ignore references`,
-                        description: ignoreReferences ? 'Currently on' : 'Currently off',
-                        detail: 'Exclude the references/bibliography section from the word count',
-                        picked: ignoreReferences,
+                        label: `$(${ignorePunctuation ? 'check' : 'circle-outline'}) Ignore punctuation`,
+                        description: ignorePunctuation ? 'Currently on' : 'Currently off',
+                        detail: 'Exclude punctuation-only words and punctuation from character counts',
+                        picked: ignorePunctuation,
                         action: 'toggle'
                     },
                     {
@@ -380,8 +383,8 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             if (selection.action === 'toggle') {
-                const nextValue = !ignoreReferences;
-                await setIgnoreReferences(nextValue);
+                const nextValue = !ignorePunctuation;
+                await setIgnorePunctuation(nextValue);
                 pdfStatsCache.clear();
                 await updateStatusBar();
                 return;
@@ -394,10 +397,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    const toggleIgnoreReferencesCommand = vscode.commands.registerCommand(
-        'pdf-word-count.toggleIgnoreReferences',
+    const toggleIgnorePunctuationCommand = vscode.commands.registerCommand(
+        'pdf-word-count.toggleIgnorePunctuation',
         async () => {
-            await setIgnoreReferences(!getIgnoreReferences());
+            await setIgnorePunctuation(!getIgnorePunctuation());
             pdfStatsCache.clear();
             await updateStatusBar();
         }
@@ -423,12 +426,12 @@ export function activate(context: vscode.ExtensionContext) {
             try {
                 vscode.window.showInformationMessage('Parsing PDF...');
 
-                const ignoreReferences = getIgnoreReferences();
-                const stats = await getPdfStats(fileUri, ignoreReferences);
-                pdfStatsCache.set(getCacheKey(fileUri, ignoreReferences), stats);
+                const ignorePunctuation = getIgnorePunctuation();
+                const stats = await getPdfStats(fileUri, ignorePunctuation);
+                pdfStatsCache.set(getCacheKey(fileUri, ignorePunctuation), stats);
 
                 const fileName = path.basename(fileUri.fsPath);
-                const modeLabel = ignoreReferences ? 'excluding references' : 'including references';
+                const modeLabel = ignorePunctuation ? 'excluding punctuation' : 'including punctuation';
                 vscode.window.showInformationMessage(
                     `"${fileName}" contains ${stats.wordCount.toLocaleString()} words (${modeLabel}).`
                 );
@@ -460,7 +463,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
         showOptionsCommand,
-        toggleIgnoreReferencesCommand,
+        toggleIgnorePunctuationCommand,
         countWordsCommand,
         pdfWatcher,
         vscode.window.onDidChangeActiveTextEditor(() => {

@@ -24,8 +24,8 @@
         "title": "PDF Word Count Options"
       },
       {
-        "command": "pdf-word-count.toggleIgnoreReferences",
-        "title": "Toggle Ignore References in PDF Word Count"
+        "command": "pdf-word-count.toggleIgnorePunctuation",
+        "title": "Toggle Ignore Punctuation in PDF Word Count"
       }
     ],
     "menus": {
