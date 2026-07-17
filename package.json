@@ -20,12 +20,8 @@
         "title": "Count Words in PDF"
       },
       {
-        "command": "pdf-word-count.showOptions",
-        "title": "PDF Word Count Options"
-      },
-      {
-        "command": "pdf-word-count.toggleIgnorePunctuation",
-        "title": "Toggle Ignore Punctuation in PDF Word Count"
+        "command": "pdf-word-count.recount",
+        "title": "Recount Words in Active PDF"
       }
     ],
     "menus": {
