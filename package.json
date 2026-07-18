@@ -48,7 +48,7 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test",
-    "test:coverage": "vscode-test --coverage --coverage-reporter=text --coverage-reporter=json-summary --coverage-reporter=lcov",
+    "test:coverage": "vscode-test --coverage --coverage-reporter=text --coverage-reporter=json-summary",
     "test:pdf": "npm run compile-tests && mocha --ui tdd out/test/pdfText.test.js"
   },
   "devDependencies": {

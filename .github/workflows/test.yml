@@ -44,7 +44,7 @@ jobs:
           echo '{ "disable-hardware-acceleration": true }' > ~/.vscode/argv.json
           xvfb-run -a npm run test:coverage
 
-      - name: Write coverage summary
+      - name: Print coverage summary
         if: success()
         run: |
           node <<'EOF'
@@ -55,19 +55,16 @@ jobs:
           const total = summary.total;
 
           const lines = [
-            "## Test coverage",
+            "Test coverage",
+            "=============",
             "",
-            "| Metric | Coverage |",
-            "| --- | --- |",
-            `| Statements | ${total.statements.pct}% |`,
-            `| Branches | ${total.branches.pct}% |`,
-            `| Functions | ${total.functions.pct}% |`,
-            `| Lines | ${total.lines.pct}% |`,
+            `Statements : ${total.statements.pct}%`,
+            `Branches   : ${total.branches.pct}%`,
+            `Functions  : ${total.functions.pct}%`,
+            `Lines      : ${total.lines.pct}%`,
             "",
-            "### By file",
-            "",
-            "| File | Lines | Statements | Branches | Functions |",
-            "| --- | --- | --- | --- | --- |",
+            "By file",
+            "-------",
           ];
 
           for (const [file, data] of Object.entries(summary)) {
@@ -77,16 +74,41 @@ jobs:
 
             const name = file.split("/").pop();
             lines.push(
-              `| ${name} | ${data.lines.pct}% | ${data.statements.pct}% | ${data.branches.pct}% | ${data.functions.pct}% |`
+              `${name}: lines ${data.lines.pct}%, statements ${data.statements.pct}%, branches ${data.branches.pct}%, functions ${data.functions.pct}%`
             );
           }
 
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
-          EOF
+          const output = `${lines.join("\n")}\n`;
+          console.log(output);
 
-      - name: Upload coverage report
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage/
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            const markdown = [
+              "## Test coverage",
+              "",
+              "| Metric | Coverage |",
+              "| --- | --- |",
+              `| Statements | ${total.statements.pct}% |`,
+              `| Branches | ${total.branches.pct}% |`,
+              `| Functions | ${total.functions.pct}% |`,
+              `| Lines | ${total.lines.pct}% |`,
+              "",
+              "### By file",
+              "",
+              "| File | Lines | Statements | Branches | Functions |",
+              "| --- | --- | --- | --- | --- |",
+            ];
+
+            for (const [file, data] of Object.entries(summary)) {
+              if (file === "total") {
+                continue;
+              }
+
+              const name = file.split("/").pop();
+              markdown.push(
+                `| ${name} | ${data.lines.pct}% | ${data.statements.pct}% | ${data.branches.pct}% | ${data.functions.pct}% |`
+              );
+            }
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown.join("\n")}\n`);
+          }
+          EOF
