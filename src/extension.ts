@@ -3,7 +3,7 @@ import * as path from 'path';
 import {
     extractPdfTextFromBuffer,
     getPdfStatsFromText,
-    type PdfStats
+    type PdfStats,
 } from './pdfText';
 
 
