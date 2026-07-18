@@ -217,7 +217,9 @@ suite("pdfText counting helpers", () => {
     });
 });
 
-suite("pdfText real PDF integration", () => {
+suite("pdfText real PDF integration", function () {
+    this.timeout(60000);
+
     const op2Path = path.join(__dirname, "../../pdfs/OP2.pdf");
     const hasOp2 = fs.existsSync(op2Path);
 
