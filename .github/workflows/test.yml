@@ -1,0 +1,92 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache VS Code test runner
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run tests with coverage
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          dbus-daemon --session --address=$DBUS_SESSION_BUS_ADDRESS --nofork --nopidfile --syslog-only &
+          mkdir -p ~/.vscode
+          echo '{ "disable-hardware-acceleration": true }' > ~/.vscode/argv.json
+          xvfb-run -a npm run test:coverage
+
+      - name: Write coverage summary
+        if: success()
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+
+          const summaryPath = "coverage/coverage-summary.json";
+          const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+          const total = summary.total;
+
+          const lines = [
+            "## Test coverage",
+            "",
+            "| Metric | Coverage |",
+            "| --- | --- |",
+            `| Statements | ${total.statements.pct}% |`,
+            `| Branches | ${total.branches.pct}% |`,
+            `| Functions | ${total.functions.pct}% |`,
+            `| Lines | ${total.lines.pct}% |`,
+            "",
+            "### By file",
+            "",
+            "| File | Lines | Statements | Branches | Functions |",
+            "| --- | --- | --- | --- | --- |",
+          ];
+
+          for (const [file, data] of Object.entries(summary)) {
+            if (file === "total") {
+              continue;
+            }
+
+            const name = file.split("/").pop();
+            lines.push(
+              `| ${name} | ${data.lines.pct}% | ${data.statements.pct}% | ${data.branches.pct}% | ${data.functions.pct}% |`
+            );
+          }
+
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          EOF
+
+      - name: Upload coverage report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
