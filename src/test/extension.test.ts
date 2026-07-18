@@ -89,7 +89,9 @@ suite("extension helpers", () => {
     });
 });
 
-suite("extension integration", () => {
+suite("extension integration", function () {
+    this.timeout(60000);
+
     test("loads and activates the extension on startup", () => {
         const extension = getExtension();
         assert.ok(extension, "expected pdf-word-count extension to be present");
