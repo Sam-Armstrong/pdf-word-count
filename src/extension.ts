@@ -60,7 +60,7 @@ async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
 /**
  * Extracts a PDF filename from a tab label, if present.
  */
-function getPdfFileNameFromTabLabel(label: string): string | undefined {
+export function getPdfFileNameFromTabLabel(label: string): string | undefined {
     const match = label.match(/([^\\/:*?"<>|]+\.pdf)\b/i);
     return match?.[1];
 }
@@ -88,7 +88,7 @@ async function getPdfUriFromTab(tab: vscode.Tab): Promise<vscode.Uri | undefined
 /**
  * Returns the file URI represented by a tab, when available.
  */
-function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
+export function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
     const input = tab.input;
 
     if (input instanceof vscode.TabInputText) {
@@ -114,14 +114,14 @@ function getTabUri(tab: vscode.Tab): vscode.Uri | undefined {
 /**
  * Returns whether a URI points to a PDF file.
  */
-function isPdfUri(uri: vscode.Uri): boolean {
+export function isPdfUri(uri: vscode.Uri): boolean {
     return uri.fsPath.toLowerCase().endsWith('.pdf');
 }
 
 /**
  * Resolves a PDF URI from a tab label using workspace paths and search.
  */
-async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | undefined> {
+export async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.Uri | undefined> {
     const fileName = getPdfFileNameFromTabLabel(label);
     if (!fileName) {
         return undefined;

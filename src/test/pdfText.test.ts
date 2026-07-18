@@ -7,6 +7,7 @@ import {
     countCharactersExcludingSpaces,
     countWords,
     extractPdfTextFromBuffer,
+    getPdfStatsFromBuffer,
     getPdfStatsFromText,
     shouldJoinHyphenatedLineBreak,
     type PdfTextItem
@@ -85,6 +86,90 @@ suite("pdfText position-aware extraction", () => {
         assert.strictEqual(shouldJoinHyphenatedLineBreak("state-", "The"), false);
         assert.strictEqual(shouldJoinHyphenatedLineBreak("n-", "2"), false);
         assert.strictEqual(shouldJoinHyphenatedLineBreak("hello", "world"), false);
+        assert.strictEqual(shouldJoinHyphenatedLineBreak("2-", "nd"), true);
+        assert.strictEqual(shouldJoinHyphenatedLineBreak("ap-", "Plication"), false);
+        assert.strictEqual(shouldJoinHyphenatedLineBreak("", "word"), false);
+        assert.strictEqual(shouldJoinHyphenatedLineBreak("word-", ""), false);
+    });
+
+    test("returns empty text for no items", () => {
+        assert.strictEqual(assembleTextFromItems([]), "");
+        assert.strictEqual(countWords(assembleTextFromItems([])), 0);
+    });
+
+    test("filters out empty items without end-of-line markers", () => {
+        const text = assembleTextFromItems([
+            item("", 0, 100, 0),
+            item("hello", 0, 100, 30)
+        ]);
+
+        assert.strictEqual(text, "hello");
+    });
+
+    test("derives glyph height from transform when height is missing", () => {
+        const text = assembleTextFromItems([
+            {
+                str: "Hi",
+                transform: [1, 0, 0, 12, 0, 100],
+                width: 20,
+                height: 0
+            },
+            {
+                str: "there",
+                transform: [1, 0, 0, 12, 30, 100],
+                width: 40,
+                height: 0
+            }
+        ]);
+
+        assert.strictEqual(text, "Hi there");
+    });
+
+    test("does not add a newline when output already ends with whitespace", () => {
+        const text = assembleTextFromItems([
+            item("line one ", 0, 200, 60, 10, true),
+            item("line two", 0, 185, 50)
+        ]);
+
+        assert.strictEqual(text, "line one line two");
+    });
+
+    test("does not add a newline for empty continuation after a line break", () => {
+        const text = assembleTextFromItems([
+            item("line one", 0, 200, 50, 10, true),
+            item("", 0, 185, 0, 10, true),
+            item("line two", 0, 170, 50)
+        ]);
+
+        assert.strictEqual(text, "line one\nline two");
+    });
+
+    test("does not insert a space when the next item already starts with whitespace", () => {
+        const text = assembleTextFromItems([
+            item("Hello", 0, 100, 30),
+            item(" world", 40, 100, 30)
+        ]);
+
+        assert.strictEqual(text, "Hello world");
+    });
+
+    test("does not insert a duplicate space when output already ends with whitespace", () => {
+        const text = assembleTextFromItems([
+            item("Hello ", 0, 100, 32),
+            item("world", 40, 100, 30)
+        ]);
+
+        assert.strictEqual(text, "Hello world");
+    });
+
+    test("inserts a newline for unrelated line breaks", () => {
+        const text = assembleTextFromItems([
+            item("first", 0, 200, 30, 10, true),
+            item("second", 0, 180, 30)
+        ]);
+
+        assert.strictEqual(text, "first\nsecond");
+        assert.strictEqual(countWords(text), 2);
     });
 
     test("getPdfStatsFromText aggregates the counting helpers", () => {
@@ -105,16 +190,30 @@ suite("pdfText counting helpers", () => {
         assert.strictEqual(countWords("Hello, world — …"), 2);
         assert.strictEqual(countWords("— … !!"), 0);
         assert.strictEqual(countWords(""), 0);
+        assert.strictEqual(countWords("   \t\n  "), 0);
+        assert.strictEqual(countWords("word"), 1);
+        assert.strictEqual(countWords("one\ttwo\n\nthree"), 3);
     });
 
     test("countCharacters includes punctuation and whitespace", () => {
         assert.strictEqual(countCharacters("Hello, world — …"), 16);
         assert.strictEqual(countCharacters("a\nb c"), 5);
+        assert.strictEqual(countCharacters(""), 0);
     });
 
     test("countCharactersExcludingSpaces removes all whitespace", () => {
         assert.strictEqual(countCharactersExcludingSpaces("Hello, world — …"), 13);
         assert.strictEqual(countCharactersExcludingSpaces("a\nb c"), 3);
+        assert.strictEqual(countCharactersExcludingSpaces("   "), 0);
+    });
+
+    test("getPdfStatsFromText returns zero counts for empty text", () => {
+        const stats = getPdfStatsFromText("");
+        assert.deepStrictEqual(stats, {
+            wordCount: 0,
+            charCount: 0,
+            charCountExcludingSpaces: 0
+        });
     });
 });
 
@@ -134,6 +233,7 @@ suite("pdfText real PDF integration", () => {
 
             const stats = getPdfStatsFromText(text);
             assert.ok(stats.wordCount > 1000, `expected substantial word count, got ${stats.wordCount}`);
+            assert.ok(stats.charCount > stats.charCountExcludingSpaces);
         }
     );
 
@@ -153,4 +253,34 @@ suite("pdfText real PDF integration", () => {
             assert.ok(stats.wordCount > 1000, `expected substantial word count, got ${stats.wordCount}`);
         }
     );
+
+    (hasAdam ? test : test.skip)(
+        "getPdfStatsFromBuffer matches text-based stats for adam.pdf",
+        async () => {
+            const buffer = fs.readFileSync(adamPath);
+            const fromBuffer = await getPdfStatsFromBuffer(new Uint8Array(buffer));
+            const fromText = getPdfStatsFromText(
+                await extractPdfTextFromBuffer(new Uint8Array(buffer))
+            );
+
+            assert.deepStrictEqual(fromBuffer, fromText);
+        }
+    );
+
+    (hasOp2 ? test : test.skip)(
+        "separates multi-page PDF text with blank lines",
+        async () => {
+            const data = new Uint8Array(fs.readFileSync(op2Path));
+            const text = await extractPdfTextFromBuffer(data);
+
+            assert.ok(text.includes("\n\n"), "expected page separator between extracted pages");
+        }
+    );
+
+    test("extractPdfTextFromBuffer rejects invalid PDF data", async () => {
+        await assert.rejects(
+            () => extractPdfTextFromBuffer(new Uint8Array([1, 2, 3, 4])),
+            /Invalid PDF/i
+        );
+    });
 });
