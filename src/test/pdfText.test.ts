@@ -3,6 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 import {
     assembleTextFromItems,
+    countCharacters,
+    countCharactersExcludingSpaces,
     countWords,
     extractPdfTextFromBuffer,
     getPdfStatsFromText,
@@ -85,10 +87,34 @@ suite("pdfText position-aware extraction", () => {
         assert.strictEqual(shouldJoinHyphenatedLineBreak("hello", "world"), false);
     });
 
-    test("counts words and characters from assembled text", () => {
-        const stats = getPdfStatsFromText("Hello, world — …");
-        assert.strictEqual(stats.wordCount, 2);
-        assert.ok(stats.charCount > stats.charCountExcludingSpaces);
+    test("getPdfStatsFromText aggregates the counting helpers", () => {
+        const text = "Hello, world — …";
+        const stats = getPdfStatsFromText(text);
+
+        assert.strictEqual(stats.wordCount, countWords(text));
+        assert.strictEqual(stats.charCount, countCharacters(text));
+        assert.strictEqual(
+            stats.charCountExcludingSpaces,
+            countCharactersExcludingSpaces(text)
+        );
+    });
+});
+
+suite("pdfText counting helpers", () => {
+    test("countWords skips punctuation-only tokens", () => {
+        assert.strictEqual(countWords("Hello, world — …"), 2);
+        assert.strictEqual(countWords("— … !!"), 0);
+        assert.strictEqual(countWords(""), 0);
+    });
+
+    test("countCharacters includes punctuation and whitespace", () => {
+        assert.strictEqual(countCharacters("Hello, world — …"), 16);
+        assert.strictEqual(countCharacters("a\nb c"), 5);
+    });
+
+    test("countCharactersExcludingSpaces removes all whitespace", () => {
+        assert.strictEqual(countCharactersExcludingSpaces("Hello, world — …"), 13);
+        assert.strictEqual(countCharactersExcludingSpaces("a\nb c"), 3);
     });
 });
 
