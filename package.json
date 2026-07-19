@@ -4,6 +4,16 @@
   "description": "Displays the word count of PDF documents.",
   "icon": "images/icon.png",
   "version": "1.0.0",
+  "publisher": "Sam-Armstrong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sam-Armstrong/pdf-word-count.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Sam-Armstrong/pdf-word-count/issues"
+  },
+  "homepage": "https://github.com/Sam-Armstrong/pdf-word-count",
   "engines": {
     "vscode": "^1.125.0"
   },
