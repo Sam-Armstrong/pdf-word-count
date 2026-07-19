@@ -2,7 +2,7 @@
   "name": "pdf-word-count",
   "displayName": "PDF Word Count",
   "description": "Displays the word count of PDF documents.",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.125.0"
   },
