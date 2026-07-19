@@ -112,3 +112,9 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown.join("\n")}\n`);
           }
           EOF
+
+      - name: Install packaging tool
+        run: npm install -g @vscode/vsce
+
+      - name: Package extension
+        run: vsce package --out extension.vsix
