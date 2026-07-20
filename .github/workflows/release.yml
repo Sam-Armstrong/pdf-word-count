@@ -38,7 +38,7 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: vsce publish --packagePath extension.vsix -p "$VSCE_PAT"
 
-    #   - name: Publish to Open VSX Registry
-    #     env:
-    #       OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
-    #     run: ovsx publish extension.vsix -p "$OPENVSX_TOKEN"
+      - name: Publish to Open VSX Registry
+        env:
+          OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
+        run: ovsx publish extension.vsix -p "$OPENVSX_TOKEN"
