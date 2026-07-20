@@ -1,7 +1,7 @@
 {
   "name": "pdf-word-count",
   "displayName": "PDF Word Count",
-  "description": "Displays the word count of PDF documents.",
+  "description": "PDF word counter to display the word count of PDF documents in the status bar.",
   "icon": "images/icon.png",
   "version": "1.0.0",
   "publisher": "Sam-Armstrong",
