@@ -7,6 +7,9 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 - Add page count, file size, and words per page stats to the status bar tooltip.
+- Reformat style of status bar tooltip to be more readable.
+- Improve explanation of extension in README
+- Update extension description
 
 ## Pre-Release v0.0.3
 
