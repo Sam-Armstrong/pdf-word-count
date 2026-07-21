@@ -14,6 +14,10 @@ An extension for VS Code and Cursor that displays the word count of PDF document
 
 ## Release Notes
 
+### Pre-Release v0.0.2
+
+Add Open VSX deployment and update extension description and notes.
+
 ### Pre-Release v0.0.1
 
 Initial release of pdf-word-count, a lightweight extension that displays the word count of PDF documents in the status bar.
