@@ -1,20 +1,45 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
-    extractPdfTextFromBuffer,
-    getPdfStatsFromText,
+    getPdfStatsFromBuffer,
     type PdfStats,
 } from './pdfText';
+
+
+/* Types */
+
+type StatusBarStats = PdfStats & {
+    fileSizeBytes: number;
+};
 
 
 /* Helper functions */
 
 /**
- * Reads a PDF file and returns its extracted text content.
+ * Formats a byte size for display in the status bar tooltip.
  */
-async function extractPdfText(fileUri: vscode.Uri): Promise<string> {
-    const fileData = await vscode.workspace.fs.readFile(fileUri);
-    return extractPdfTextFromBuffer(fileData);
+export function formatFileSize(bytes: number): string {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+
+    if (bytes < 1024 * 1024) {
+        const kb = bytes / 1024;
+        return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+    }
+
+    const mb = bytes / (1024 * 1024);
+    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
+/**
+ * Returns average words per page, rounded to the nearest integer.
+ */
+export function wordsPerPage(stats: Pick<PdfStats, "wordCount" | "pageCount">): number {
+    if (stats.pageCount <= 0) {
+        return 0;
+    }
+    return Math.round(stats.wordCount / stats.pageCount);
 }
 
 /**
@@ -66,11 +91,15 @@ export function getPdfFileNameFromTabLabel(label: string): string | undefined {
 }
 
 /**
- * Parses a PDF and returns its word and character counts.
+ * Parses a PDF and returns its word, character, page, and file-size stats.
  */
-async function getPdfStats(fileUri: vscode.Uri): Promise<PdfStats> {
-    const text = await extractPdfText(fileUri);
-    return getPdfStatsFromText(text);
+async function getPdfStats(fileUri: vscode.Uri): Promise<StatusBarStats> {
+    const fileData = await vscode.workspace.fs.readFile(fileUri);
+    const stats = await getPdfStatsFromBuffer(fileData);
+    return {
+        ...stats,
+        fileSizeBytes: fileData.byteLength
+    };
 }
 
 /**
@@ -153,7 +182,7 @@ export async function resolvePdfUriFromTabLabel(label: string): Promise<vscode.U
  * Activates the extension and registers commands, listeners, and the status bar.
  */
 export function activate(context: vscode.ExtensionContext) {
-    const pdfStatsCache = new Map<string, PdfStats>();
+    const pdfStatsCache = new Map<string, StatusBarStats>();
     let updateSequence = 0;
     let updateTimer: ReturnType<typeof setTimeout> | undefined;
     const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
@@ -169,23 +198,25 @@ export function activate(context: vscode.ExtensionContext) {
     /**
      * Builds the hover tooltip shown for the status bar word count.
      */
-    function buildStatusBarTooltip(fileName: string, stats: PdfStats): vscode.MarkdownString {
+    function buildStatusBarTooltip(fileName: string, stats: StatusBarStats): vscode.MarkdownString {
         const tooltip = new vscode.MarkdownString(undefined, true);
         tooltip.isTrusted = true;
 
-        tooltip.appendMarkdown(`**${fileName}**\n\n`);
-        tooltip.appendMarkdown(`${stats.wordCount.toLocaleString()} words\n\n`);
-        tooltip.appendMarkdown(`${stats.charCount.toLocaleString()} characters\n\n`);
-        tooltip.appendMarkdown(
-            `${stats.charCountExcludingSpaces.toLocaleString()} characters excluding spaces\n\n`
-        );
+        tooltip.appendMarkdown(`*${fileName}*\n\n`);
+        tooltip.appendMarkdown(`---\n\n`);
+        tooltip.appendMarkdown(`File size: ${formatFileSize(stats.fileSizeBytes)}\n\n`);
+        tooltip.appendMarkdown(`Pages: ${stats.pageCount.toLocaleString()}\n\n`);
+        tooltip.appendMarkdown(`Words: ${stats.wordCount.toLocaleString()}\n\n`);
+        tooltip.appendMarkdown(`Characters: ${stats.charCount.toLocaleString()}\n\n`);
+        tooltip.appendMarkdown(`Characters (no spaces): ${stats.charCountExcludingSpaces.toLocaleString()}\n\n`);
+        tooltip.appendMarkdown(`Words per page: ${wordsPerPage(stats).toLocaleString()}\n\n`);
         return tooltip;
     }
 
     /**
      * Updates the status bar text and tooltip for a completed word count.
      */
-    function renderStatusBar(fileName: string, stats: PdfStats): void {
+    function renderStatusBar(fileName: string, stats: StatusBarStats): void {
         statusBarItem.text = `$(file-pdf) ${stats.wordCount.toLocaleString()} words`;
         statusBarItem.tooltip = buildStatusBarTooltip(fileName, stats);
     }
@@ -195,7 +226,7 @@ export function activate(context: vscode.ExtensionContext) {
      * Returns the stats that were shown, or undefined when there is no active PDF
      * or counting failed (so tests can assert success rather than non-throw).
      */
-    async function updateStatusBar(): Promise<PdfStats | undefined> {
+    async function updateStatusBar(): Promise<StatusBarStats | undefined> {
         const pdfUri = await getActivePdfUri();
         if (!pdfUri) {
             statusBarItem.hide();
@@ -264,7 +295,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     const recountCommand = vscode.commands.registerCommand(
         'pdf-word-count.recount',
-        async (): Promise<PdfStats | undefined> => {
+        async (): Promise<StatusBarStats | undefined> => {
             pdfStatsCache.clear();
             return updateStatusBar();
         }
@@ -272,7 +303,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     const countWordsCommand = vscode.commands.registerCommand(
         'pdf-word-count.countWords',
-        async (uri?: vscode.Uri): Promise<PdfStats | undefined> => {
+        async (uri?: vscode.Uri): Promise<StatusBarStats | undefined> => {
             let fileUri = uri ?? await getActivePdfUri();
 
             if (!fileUri) {

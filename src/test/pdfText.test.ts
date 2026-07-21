@@ -6,6 +6,7 @@ import {
     countCharacters,
     countCharactersExcludingSpaces,
     countWords,
+    extractPdfFromBuffer,
     extractPdfTextFromBuffer,
     getPdfStatsFromBuffer,
     getPdfStatsFromText,
@@ -174,7 +175,7 @@ suite("pdfText position-aware extraction", () => {
 
     test("getPdfStatsFromText aggregates the counting helpers", () => {
         const text = "Hello, world — …";
-        const stats = getPdfStatsFromText(text);
+        const stats = getPdfStatsFromText(text, 3);
 
         assert.strictEqual(stats.wordCount, countWords(text));
         assert.strictEqual(stats.charCount, countCharacters(text));
@@ -182,6 +183,7 @@ suite("pdfText position-aware extraction", () => {
             stats.charCountExcludingSpaces,
             countCharactersExcludingSpaces(text)
         );
+        assert.strictEqual(stats.pageCount, 3);
     });
 });
 
@@ -212,7 +214,8 @@ suite("pdfText counting helpers", () => {
         assert.deepStrictEqual(stats, {
             wordCount: 0,
             charCount: 0,
-            charCountExcludingSpaces: 0
+            charCountExcludingSpaces: 0,
+            pageCount: 0
         });
     });
 });
@@ -360,11 +363,11 @@ suite("pdfText real PDF integration", function () {
         async () => {
             const buffer = fs.readFileSync(adamPath);
             const fromBuffer = await getPdfStatsFromBuffer(new Uint8Array(buffer));
-            const fromText = getPdfStatsFromText(
-                await extractPdfTextFromBuffer(new Uint8Array(buffer))
-            );
+            const { text, pageCount } = await extractPdfFromBuffer(new Uint8Array(buffer));
+            const fromText = getPdfStatsFromText(text, pageCount);
 
             assert.deepStrictEqual(fromBuffer, fromText);
+            assert.ok(fromBuffer.pageCount > 0);
         }
     );
 

@@ -4,10 +4,12 @@ import * as path from "path";
 import * as vscode from "vscode";
 import {
     deactivate,
+    formatFileSize,
     getPdfFileNameFromTabLabel,
     getTabUri,
     isPdfUri,
-    resolvePdfUriFromTabLabel
+    resolvePdfUriFromTabLabel,
+    wordsPerPage
 } from "../extension";
 import { getPdfStatsFromBuffer, type PdfStats } from "../pdfText";
 
@@ -30,7 +32,8 @@ function isPdfStats(value: unknown): value is PdfStats {
     return (
         typeof stats.wordCount === "number" &&
         typeof stats.charCount === "number" &&
-        typeof stats.charCountExcludingSpaces === "number"
+        typeof stats.charCountExcludingSpaces === "number" &&
+        typeof stats.pageCount === "number"
     );
 }
 
@@ -71,6 +74,21 @@ function captureWindowMessages(): {
 }
 
 suite("extension helpers", () => {
+    test("formatFileSize uses compact byte units", () => {
+        assert.strictEqual(formatFileSize(0), "0 B");
+        assert.strictEqual(formatFileSize(512), "512 B");
+        assert.strictEqual(formatFileSize(1536), "1.5 KB");
+        assert.strictEqual(formatFileSize(10 * 1024), "10 KB");
+        assert.strictEqual(formatFileSize(1.5 * 1024 * 1024), "1.5 MB");
+        assert.strictEqual(formatFileSize(12 * 1024 * 1024), "12 MB");
+    });
+
+    test("wordsPerPage rounds to the nearest integer", () => {
+        assert.strictEqual(wordsPerPage({ wordCount: 1000, pageCount: 3 }), 333);
+        assert.strictEqual(wordsPerPage({ wordCount: 1000, pageCount: 4 }), 250);
+        assert.strictEqual(wordsPerPage({ wordCount: 10, pageCount: 0 }), 0);
+    });
+
     test("getPdfFileNameFromTabLabel extracts pdf filenames from tab labels", () => {
         assert.strictEqual(getPdfFileNameFromTabLabel("adam.pdf"), "adam.pdf");
         assert.strictEqual(
@@ -176,6 +194,8 @@ suite("extension integration", function () {
             assert.ok(isPdfStats(stats), "expected countWords to return PDF stats on success");
             assert.ok(stats!.wordCount > 1000);
             assert.strictEqual(stats!.wordCount, expectedStats.wordCount);
+            assert.strictEqual(stats!.pageCount, expectedStats.pageCount);
+            assert.ok(stats!.pageCount > 0);
             assert.ok(
                 messages.info.some((message) => message.includes("contains") && message.includes("words")),
                 `expected a success info message, got: ${JSON.stringify(messages.info)}`
@@ -233,6 +253,10 @@ suite("extension integration", function () {
         );
         assert.ok(stats!.wordCount > 1000);
         assert.ok(stats!.charCount > stats!.charCountExcludingSpaces);
+        assert.ok(stats!.pageCount > 0);
+        assert.ok(
+            typeof (stats as PdfStats & { fileSizeBytes?: number }).fileSizeBytes === "number"
+        );
     });
 
     test("recount returns undefined when no PDF is active", async () => {

@@ -4,6 +4,10 @@ All notable changes will be documented in this file.
 
 <!-- Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file. -->
 
+## [Unreleased]
+
+- Add page count, file size, and words per page stats to the status bar tooltip.
+
 ## Pre-Release v0.0.3
 
 - Bundle pdf.js into the CJS extension to fix import bug.

@@ -23,6 +23,12 @@ export type PdfStats = {
     wordCount: number;
     charCount: number;
     charCountExcludingSpaces: number;
+    pageCount: number;
+};
+
+export type PdfTextExtraction = {
+    text: string;
+    pageCount: number;
 };
 
 type PdfTextContentItem = {
@@ -240,11 +246,11 @@ async function getPdfModule(): Promise<PdfModule> {
 }
 
 /**
- * Parses a PDF buffer and returns word/character stats.
+ * Parses a PDF buffer and returns word/character/page stats.
  */
 export async function getPdfStatsFromBuffer(data: Uint8Array): Promise<PdfStats> {
-    const text = await extractPdfTextFromBuffer(data);
-    return getPdfStatsFromText(text);
+    const { text, pageCount } = await extractPdfFromBuffer(data);
+    return getPdfStatsFromText(text, pageCount);
 }
 
 /**
@@ -259,9 +265,9 @@ export function shouldJoinHyphenatedLineBreak(output: string, nextText: string):
 /* Public methods */
 
 /**
- * Extracts text from a PDF buffer using position-aware assembly.
+ * Extracts text and page count from a PDF buffer using position-aware assembly.
  */
-export async function extractPdfTextFromBuffer(data: Uint8Array): Promise<string> {
+export async function extractPdfFromBuffer(data: Uint8Array): Promise<PdfTextExtraction> {
     // pdf.js transfers data.buffer to the fake worker via structuredClone. A
     // view over Node's Buffer pool (or other non-plain ArrayBuffers) throws
     // DataCloneError under Electron, so copy into a standalone buffer first.
@@ -298,19 +304,31 @@ export async function extractPdfTextFromBuffer(data: Uint8Array): Promise<string
             pages.push(assembleTextFromItems(items));
         }
 
-        return pages.join("\n\n");
+        return {
+            text: pages.join("\n\n"),
+            pageCount: doc.numPages
+        };
     } finally {
         await doc.cleanup();
     }
 }
 
 /**
- * Derives word and character counts from extracted PDF text.
+ * Extracts text from a PDF buffer using position-aware assembly.
  */
-export function getPdfStatsFromText(text: string): PdfStats {
+export async function extractPdfTextFromBuffer(data: Uint8Array): Promise<string> {
+    const { text } = await extractPdfFromBuffer(data);
+    return text;
+}
+
+/**
+ * Derives word, character, and page stats from extracted PDF text.
+ */
+export function getPdfStatsFromText(text: string, pageCount = 0): PdfStats {
     return {
         wordCount: countWords(text),
         charCount: countCharacters(text),
-        charCountExcludingSpaces: countCharactersExcludingSpaces(text)
+        charCountExcludingSpaces: countCharactersExcludingSpaces(text),
+        pageCount
     };
 }
