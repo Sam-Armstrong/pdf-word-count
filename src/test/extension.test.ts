@@ -9,7 +9,7 @@ import {
     isPdfUri,
     resolvePdfUriFromTabLabel
 } from "../extension";
-import { getPdfStatsFromBuffer } from "../pdfText";
+import { getPdfStatsFromBuffer, type PdfStats } from "../pdfText";
 
 
 function getExtension() {
@@ -20,6 +20,54 @@ function getExtension() {
 
 function pdfFixturePath(fileName: string): string {
     return path.join(__dirname, "../../pdfs", fileName);
+}
+
+function isPdfStats(value: unknown): value is PdfStats {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+    const stats = value as PdfStats;
+    return (
+        typeof stats.wordCount === "number" &&
+        typeof stats.charCount === "number" &&
+        typeof stats.charCountExcludingSpaces === "number"
+    );
+}
+
+/**
+ * Captures window messages so tests can assert success/failure rather than
+ * only checking that swallowed errors did not reject the command promise.
+ */
+function captureWindowMessages(): {
+    info: string[];
+    errors: string[];
+    dispose: () => void;
+} {
+    const info: string[] = [];
+    const errors: string[] = [];
+    const originalInfo = vscode.window.showInformationMessage;
+    const originalError = vscode.window.showErrorMessage;
+
+    (vscode.window as { showInformationMessage: typeof originalInfo }).showInformationMessage =
+        ((message: string, ..._rest: unknown[]) => {
+            info.push(message);
+            return Promise.resolve(undefined);
+        }) as typeof originalInfo;
+
+    (vscode.window as { showErrorMessage: typeof originalError }).showErrorMessage =
+        ((message: string, ..._rest: unknown[]) => {
+            errors.push(message);
+            return Promise.resolve(undefined);
+        }) as typeof originalError;
+
+    return {
+        info,
+        errors,
+        dispose: () => {
+            vscode.window.showInformationMessage = originalInfo;
+            vscode.window.showErrorMessage = originalError;
+        }
+    };
 }
 
 suite("extension helpers", () => {
@@ -104,7 +152,9 @@ suite("extension integration", function () {
         assert.ok(commands.includes("pdf-word-count.recount"));
     });
 
-    test("countWords parses a provided PDF URI end to end", async function () {
+    test("countWords parses a provided PDF URI via the bundled extension", async function () {
+        // This executes dist/extension.js in the extension host — not out/pdfText.js —
+        // so a swallowed ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING would fail the return assert.
         const adamPath = pdfFixturePath("adam.pdf");
         if (!fs.existsSync(adamPath)) {
             this.skip();
@@ -115,25 +165,84 @@ suite("extension integration", function () {
         const expectedStats = await getPdfStatsFromBuffer(
             new Uint8Array(fs.readFileSync(adamPath))
         );
+        const messages = captureWindowMessages();
 
-        await assert.doesNotReject(async () => {
-            await vscode.commands.executeCommand("pdf-word-count.countWords", uri);
-        });
-        assert.ok(expectedStats.wordCount > 1000);
+        try {
+            const stats = await vscode.commands.executeCommand<PdfStats | undefined>(
+                "pdf-word-count.countWords",
+                uri
+            );
+
+            assert.ok(isPdfStats(stats), "expected countWords to return PDF stats on success");
+            assert.ok(stats!.wordCount > 1000);
+            assert.strictEqual(stats!.wordCount, expectedStats.wordCount);
+            assert.ok(
+                messages.info.some((message) => message.includes("contains") && message.includes("words")),
+                `expected a success info message, got: ${JSON.stringify(messages.info)}`
+            );
+            assert.deepStrictEqual(
+                messages.errors,
+                [],
+                `expected no error messages, got: ${JSON.stringify(messages.errors)}`
+            );
+        } finally {
+            messages.dispose();
+        }
     });
 
-    test("countWords handles unreadable PDFs without throwing", async () => {
+    test("countWords reports an error for unreadable PDFs", async () => {
         const missingUri = vscode.Uri.file(path.join(__dirname, "../../pdfs/does-not-exist.pdf"));
+        const messages = captureWindowMessages();
 
-        await assert.doesNotReject(async () => {
-            await vscode.commands.executeCommand("pdf-word-count.countWords", missingUri);
-        });
+        try {
+            const stats = await vscode.commands.executeCommand<PdfStats | undefined>(
+                "pdf-word-count.countWords",
+                missingUri
+            );
+
+            assert.strictEqual(stats, undefined);
+            assert.ok(
+                messages.errors.some((message) => message.includes("Failed to parse PDF")),
+                `expected a parse error message, got: ${JSON.stringify(messages.errors)}`
+            );
+        } finally {
+            messages.dispose();
+        }
     });
 
-    test("recount command refreshes the active PDF count", async () => {
-        await assert.doesNotReject(async () => {
-            await vscode.commands.executeCommand("pdf-word-count.recount");
-        });
+    test("recount returns stats for an open PDF through the status bar path", async function () {
+        const adamPath = pdfFixturePath("adam.pdf");
+        if (!fs.existsSync(adamPath)) {
+            this.skip();
+            return;
+        }
+
+        const uri = vscode.Uri.file(adamPath);
+        await vscode.commands.executeCommand("vscode.open", uri);
+
+        // allow tab / custom editor state to settle before resolving the active PDF
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const stats = await vscode.commands.executeCommand<PdfStats | undefined>(
+            "pdf-word-count.recount"
+        );
+
+        assert.ok(
+            isPdfStats(stats),
+            "expected recount to return stats for the active PDF (status bar path)"
+        );
+        assert.ok(stats!.wordCount > 1000);
+        assert.ok(stats!.charCount > stats!.charCountExcludingSpaces);
+    });
+
+    test("recount returns undefined when no PDF is active", async () => {
+        // close editors so getActivePdfUri has nothing to bind to
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+        const stats = await vscode.commands.executeCommand<PdfStats | undefined>(
+            "pdf-word-count.recount"
+        );
+        assert.strictEqual(stats, undefined);
     });
 
     test("deactivate is safe to call", () => {
