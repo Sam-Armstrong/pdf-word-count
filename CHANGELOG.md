@@ -7,6 +7,9 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 - Bundle pdf.js into the CJS extension to fix import bug.
+- Copy PDF bytes into a plain `Uint8Array` before parsing so Electron's fake-worker `structuredClone` does not throw `DataCloneError`.
+- Improve tests so command success is asserted (return values + messages), not just non-throw.
+- Cover the status bar/recount path with an open PDF, and smoke-test the bundled `dist/pdfText.js` parser.
 
 ## Pre-Release v0.0.2
 
