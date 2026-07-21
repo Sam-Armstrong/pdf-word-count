@@ -1,5 +1,15 @@
 # PDF Word Count
 
+<p align="center">
+  <img src="images/icon.png" alt="PDF Word Count icon" width="15%" />
+</p>
+
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=Sam-Armstrong.pdf-word-count">VS Code Marketplace</a>
+  &nbsp;·&nbsp;
+  <a href="https://open-vsx.org/extension/Sam-Armstrong/pdf-word-count">Open VSX</a>
+</p>
+
 An extension for Visual Studio Code and Open VSX-based editors (such as Cursor), which displays the word count of PDF
 documents in the status bar, along with more detailed statistics about a PDF (file size, page count, character count,
 etc.) in the status bar tooltip upon hover.
