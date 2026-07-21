@@ -192,12 +192,14 @@ export function activate(context: vscode.ExtensionContext) {
 
     /**
      * Refreshes the status bar for the active PDF, using the cache when possible.
+     * Returns the stats that were shown, or undefined when there is no active PDF
+     * or counting failed (so tests can assert success rather than non-throw).
      */
-    async function updateStatusBar(): Promise<void> {
+    async function updateStatusBar(): Promise<PdfStats | undefined> {
         const pdfUri = await getActivePdfUri();
         if (!pdfUri) {
             statusBarItem.hide();
-            return;
+            return undefined;
         }
 
         const cacheKey = pdfUri.toString();
@@ -209,25 +211,28 @@ export function activate(context: vscode.ExtensionContext) {
         statusBarItem.show();
 
         if (pdfStatsCache.has(cacheKey)) {
-            renderStatusBar(fileName, pdfStatsCache.get(cacheKey)!);
-            return;
+            const cached = pdfStatsCache.get(cacheKey)!;
+            renderStatusBar(fileName, cached);
+            return cached;
         }
 
         try {
             const stats = await getPdfStats(pdfUri);
             if (sequence !== updateSequence) {
-                return;
+                return undefined;
             }
 
             pdfStatsCache.set(cacheKey, stats);
             renderStatusBar(fileName, stats);
+            return stats;
         } catch (err) {
             if (sequence !== updateSequence) {
-                return;
+                return undefined;
             }
 
             statusBarItem.text = '$(file-pdf) PDF: Count failed';
             statusBarItem.tooltip = `Failed to count words in ${fileName}: ${err}`;
+            return undefined;
         }
     }
 
@@ -259,15 +264,15 @@ export function activate(context: vscode.ExtensionContext) {
 
     const recountCommand = vscode.commands.registerCommand(
         'pdf-word-count.recount',
-        async () => {
+        async (): Promise<PdfStats | undefined> => {
             pdfStatsCache.clear();
-            await updateStatusBar();
+            return updateStatusBar();
         }
     );
 
     const countWordsCommand = vscode.commands.registerCommand(
         'pdf-word-count.countWords',
-        async (uri?: vscode.Uri) => {
+        async (uri?: vscode.Uri): Promise<PdfStats | undefined> => {
             let fileUri = uri ?? await getActivePdfUri();
 
             if (!fileUri) {
@@ -278,7 +283,7 @@ export function activate(context: vscode.ExtensionContext) {
                 if (uris && uris.length > 0) {
                     fileUri = uris[0];
                 } else {
-                    return;
+                    return undefined;
                 }
             }
 
@@ -296,8 +301,11 @@ export function activate(context: vscode.ExtensionContext) {
                 if ((await getActivePdfUri())?.toString() === fileUri.toString()) {
                     await updateStatusBar();
                 }
+
+                return stats;
             } catch (err) {
                 vscode.window.showErrorMessage(`Failed to parse PDF: ${err}`);
+                return undefined;
             }
         }
     );
