@@ -251,6 +251,69 @@ suite("pdfText extension-host loading", function () {
             "expected getPdfModule to import pdf.worker.mjs for extension-host compatibility"
         );
     });
+
+    test("bundled dist/pdfText.js can parse adam.pdf", async function () {
+        // Exercises the same esbuild/CJS + bundled-pdfjs path as the extension.
+        // Run in a clean Node process so we do not share globalThis.pdfjsWorker with
+        // out/pdfText.js or the already-loaded extension host bundle.
+        const adamPath = path.join(__dirname, "../../pdfs/adam.pdf");
+        const bundlePath = path.join(__dirname, "../../dist/pdfText.js");
+        if (!fs.existsSync(adamPath)) {
+            this.skip();
+            return;
+        }
+        assert.ok(fs.existsSync(bundlePath), `missing bundle at ${bundlePath}; run npm run compile`);
+
+        const script = `
+            const fs = require("fs");
+            const bundled = require(${JSON.stringify(bundlePath)});
+            (async () => {
+                // Copy out of Node's Buffer pool — Electron's structuredClone cannot
+                // transfer Buffer-backed Uint8Array views (DataCloneError).
+                const fileBuffer = fs.readFileSync(${JSON.stringify(adamPath)});
+                const data = new Uint8Array(fileBuffer.byteLength);
+                data.set(fileBuffer);
+                const text = await bundled.extractPdfTextFromBuffer(data);
+                const stats = await bundled.getPdfStatsFromBuffer(data);
+                if (!/\\bAdam\\b/.test(text)) {
+                    console.error("missing Adam marker");
+                    process.exit(2);
+                }
+                if (!(stats.wordCount > 1000)) {
+                    console.error("low word count", stats);
+                    process.exit(3);
+                }
+                if (typeof globalThis.pdfjsWorker?.WorkerMessageHandler !== "function") {
+                    console.error("pdfjsWorker not installed");
+                    process.exit(4);
+                }
+                console.log(JSON.stringify(stats));
+            })().catch((err) => {
+                console.error(err);
+                process.exit(1);
+            });
+        `;
+
+        const { execFile } = await import("child_process");
+        const { promisify } = await import("util");
+        const execFileAsync = promisify(execFile);
+        // vscode-test sets process.execPath to Electron's helper, which is not a
+        // general-purpose Node binary for this smoke test.
+        const nodeBinary =
+            /Code Helper|Electron/i.test(process.execPath) ? "node" : process.execPath;
+        const { stdout, stderr } = await execFileAsync(nodeBinary, ["-e", script], {
+            maxBuffer: 10 * 1024 * 1024
+        });
+
+        assert.ok(
+            !/DataCloneError|ERR_VM_DYNAMIC_IMPORT/i.test(stderr),
+            `bundled parser failed: ${stderr}`
+        );
+        const stats = JSON.parse(stdout.trim().split("\n").at(-1)!) as {
+            wordCount: number;
+        };
+        assert.ok(stats.wordCount > 1000);
+    });
 });
 
 suite("pdfText real PDF integration", function () {
