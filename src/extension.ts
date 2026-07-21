@@ -204,12 +204,19 @@ export function activate(context: vscode.ExtensionContext) {
 
         tooltip.appendMarkdown(`*${fileName}*\n\n`);
         tooltip.appendMarkdown(`---\n\n`);
-        tooltip.appendMarkdown(`File size: ${formatFileSize(stats.fileSizeBytes)}\n\n`);
-        tooltip.appendMarkdown(`Pages: ${stats.pageCount.toLocaleString()}\n\n`);
-        tooltip.appendMarkdown(`Words: ${stats.wordCount.toLocaleString()}\n\n`);
-        tooltip.appendMarkdown(`Characters: ${stats.charCount.toLocaleString()}\n\n`);
-        tooltip.appendMarkdown(`Characters (no spaces): ${stats.charCountExcludingSpaces.toLocaleString()}\n\n`);
-        tooltip.appendMarkdown(`Words per page: ${wordsPerPage(stats).toLocaleString()}\n\n`);
+        tooltip.appendMarkdown(
+            [
+                "| | |",
+                "| --- | ---: |",
+                `| File size | ${formatFileSize(stats.fileSizeBytes)} |`,
+                `| Pages | ${stats.pageCount.toLocaleString()} |`,
+                `| Words | ${stats.wordCount.toLocaleString()} |`,
+                `| Characters | ${stats.charCount.toLocaleString()} |`,
+                `| Chars (no spaces) | ${stats.charCountExcludingSpaces.toLocaleString()} |`,
+                `| Words per page | ${wordsPerPage(stats).toLocaleString()} |`,
+                ""
+            ].join("\n")
+        );
         return tooltip;
     }
 
