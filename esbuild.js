@@ -26,7 +26,8 @@ const esbuildProblemMatcherPlugin = {
 async function main() {
 	const ctx = await esbuild.context({
 		entryPoints: [
-			'src/extension.ts'
+			'src/extension.ts',
+			'src/pdfText.ts',
 		],
 		bundle: true,
 		format: 'cjs',
@@ -34,7 +35,7 @@ async function main() {
 		sourcemap: !production,
 		sourcesContent: false,
 		platform: 'node',
-		outfile: 'dist/extension.js',
+		outdir: 'dist',
 		external: ['vscode'],
 		logLevel: 'silent',
 		// Bundle pdfjs-dist into the CJS extension. Leaving it external forces a
