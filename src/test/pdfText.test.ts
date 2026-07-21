@@ -217,6 +217,42 @@ suite("pdfText counting helpers", () => {
     });
 });
 
+suite("pdfText extension-host loading", function () {
+    this.timeout(60000);
+
+    test("extension bundle does not dynamically import pdfjs-dist at runtime", () => {
+        // The VS Code / Cursor extension host runs extension code in a context
+        // where import() throws ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING. pdf.js
+        // must therefore be bundled into dist/extension.js (CJS), and its
+        // worker must be preloaded onto globalThis.pdfjsWorker so the fake
+        // worker path does not call import() either.
+        const bundlePath = path.join(__dirname, "../../dist/extension.js");
+        assert.ok(fs.existsSync(bundlePath), `missing bundle at ${bundlePath}`);
+        const bundle = fs.readFileSync(bundlePath, "utf8");
+
+        assert.equal(
+            /import\(\s*["']pdfjs-dist/.test(bundle),
+            false,
+            "dist/extension.js must not leave pdfjs-dist as a runtime dynamic import"
+        );
+    });
+
+    test("pdfText loader eagerly imports the pdf.js worker module", () => {
+        // Node disables real workers, so pdf.js falls back to a fake worker that
+        // does `import(workerSrc)`. Pre-importing the worker populates
+        // globalThis.pdfjsWorker and avoids that dynamic import.
+        const source = fs.readFileSync(
+            path.join(__dirname, "../../src/pdfText.ts"),
+            "utf8"
+        );
+        assert.match(
+            source,
+            /pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs/,
+            "expected getPdfModule to import pdf.worker.mjs for extension-host compatibility"
+        );
+    });
+});
+
 suite("pdfText real PDF integration", function () {
     this.timeout(60000);
 
