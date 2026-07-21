@@ -1,8 +1,3 @@
-import { createRequire } from "module";
-import * as path from "path";
-import { pathToFileURL } from "url";
-
-
 /* Types */
 
 type PdfDocument = {
@@ -220,7 +215,15 @@ function ensureDomPolyfills(): void {
 }
 
 /**
- * Loads pdf.js once and points its worker at the packaged worker script.
+ * Loads pdf.js once for the extension host.
+ *
+ * pdf.js is ESM-only and, under Node, always uses a "fake worker" that does
+ * `import(workerSrc)`. The VS Code / Cursor extension host runs extensions in a
+ * VM context without an `importModuleDynamically` callback, so that import
+ * throws ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING. We therefore:
+ *  1. Let esbuild bundle pdf.js into the CJS extension entry (no runtime import)
+ *  2. Eagerly import the worker so it installs `globalThis.pdfjsWorker`, which
+ *     short-circuits the fake-worker dynamic import
  */
 async function getPdfModule(): Promise<PdfModule> {
     if (!pdfModulePromise) {
@@ -229,11 +232,7 @@ async function getPdfModule(): Promise<PdfModule> {
             const pdfjs = (await import(
                 "pdfjs-dist/legacy/build/pdf.mjs"
             )) as unknown as PdfModule;
-            const require = createRequire(__filename);
-            const packageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
-            const workerPath = path.join(packageRoot, "legacy/build/pdf.worker.mjs");
-            // Electron/extension host resolves workers more reliably via file URLs.
-            pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
+            await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
             return pdfjs;
         })();
     }
