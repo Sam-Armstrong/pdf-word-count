@@ -262,9 +262,15 @@ export function shouldJoinHyphenatedLineBreak(output: string, nextText: string):
  * Extracts text from a PDF buffer using position-aware assembly.
  */
 export async function extractPdfTextFromBuffer(data: Uint8Array): Promise<string> {
+    // pdf.js transfers data.buffer to the fake worker via structuredClone. A
+    // view over Node's Buffer pool (or other non-plain ArrayBuffers) throws
+    // DataCloneError under Electron, so copy into a standalone buffer first.
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+
     const pdfjs = await getPdfModule();
     const doc = await pdfjs.getDocument({
-        data,
+        data: copy,
         useSystemFonts: true,
         disableFontFace: true
     }).promise;
