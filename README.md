@@ -1,7 +1,8 @@
 # PDF Word Count
 
-An extension for VS Code and Cursor that displays the word count of PDF documents in the status bar, along with more
-detailed statistics (file size, page count, character count, etc.) about a PDF upon hover.
+An extension for Visual Studio Code and Open VSX-based editors (such as Cursor), which displays the word count of PDF
+documents in the status bar, along with more detailed statistics about a PDF (file size, page count, character count,
+etc.) in the status bar tooltip upon hover.
 
 <p align="center">
   <img src="images/status_bar.png" alt="Status bar example" width="30%" />
