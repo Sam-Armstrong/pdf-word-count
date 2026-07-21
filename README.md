@@ -12,10 +12,10 @@
 
 <p align="center">
   <a href="https://github.com/Sam-Armstrong/pdf-word-count/actions/workflows/test.yml">
-    <img class="dark-light" style="padding-right: 4px; padding-bottom: 4px;" src="https://github.com/Sam-Armstrong/pdf-word-count/actions/workflows/test.yml/badge.svg">
+    <img class="dark-light" src="https://github.com/Sam-Armstrong/pdf-word-count/actions/workflows/test.yml/badge.svg">
   </a>
   <a href="https://github.com/Sam-Armstrong/pdf-word-count/actions/workflows/release.yml">
-    <img class="dark-light" style="padding-right: 4px; padding-bottom: 4px;" src="https://github.com/Sam-Armstrong/pdf-word-count/actions/workflows/release.yml/badge.svg">
+    <img class="dark-light" src="https://github.com/Sam-Armstrong/pdf-word-count/actions/workflows/release.yml/badge.svg">
   </a>
 </p>
 
