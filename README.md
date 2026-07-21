@@ -20,6 +20,15 @@ on GitHub. Pull requests are also welcome!
 
 <!-- ## Extension Settings -->
 
+## How it works
+
+The extension uses [pdf.js](https://mozilla.github.io/pdf.js/) to pull positioned text items from each page
+of a PDF document, then converts these into a block of continuous text by inserting spaces where the horizontal
+gap between items is large relative to the font height, starting a new line when the vertical position changes or
+an item reports an end of line. Words split by a hyphen at a line break are rejoined, so they don't get counted as
+separate words. The word count is then calculated as the number of whitespace-separated tokens in the resulting text,
+excluding any tokens that are just made up of punctuation.
+
 ## Known Issues
 
 ...
