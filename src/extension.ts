@@ -208,12 +208,12 @@ export function activate(context: vscode.ExtensionContext) {
             [
                 "| | |",
                 "| --- | ---: |",
-                `| File size | ${formatFileSize(stats.fileSizeBytes)} |`,
-                `| Pages | ${stats.pageCount.toLocaleString()} |`,
-                `| Words | ${stats.wordCount.toLocaleString()} |`,
-                `| Characters | ${stats.charCount.toLocaleString()} |`,
-                `| Chars (no spaces) | ${stats.charCountExcludingSpaces.toLocaleString()} |`,
-                `| Words per page | ${wordsPerPage(stats).toLocaleString()} |`,
+                `| File size: | ${formatFileSize(stats.fileSizeBytes)} |`,
+                `| Pages: | ${stats.pageCount.toLocaleString()} |`,
+                `| Words: | ${stats.wordCount.toLocaleString()} |`,
+                `| Characters: | ${stats.charCount.toLocaleString()} |`,
+                `| → no spaces: | ${stats.charCountExcludingSpaces.toLocaleString()} |`,
+                `| Words per page: | ${wordsPerPage(stats).toLocaleString()} |`,
                 ""
             ].join("\n")
         );
