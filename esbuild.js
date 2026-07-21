@@ -37,16 +37,10 @@ async function main() {
 		outfile: 'dist/extension.js',
 		external: ['vscode'],
 		logLevel: 'silent',
+		// Bundle pdfjs-dist into the CJS extension. Leaving it external forces a
+		// runtime `import()` of ESM, which fails in the extension host with
+		// ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING.
 		plugins: [
-			{
-				name: 'external-pdfjs',
-				setup(build) {
-					build.onResolve({ filter: /^pdfjs-dist(\/|$)/ }, (args) => ({
-						path: args.path,
-						external: true,
-					}));
-				},
-			},
 			/* add to the end of plugins array */
 			esbuildProblemMatcherPlugin,
 		],

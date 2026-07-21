@@ -2,8 +2,6 @@
 .vscode-test/**
 out/**
 node_modules/**
-!node_modules/pdfjs-dist/package.json
-!node_modules/pdfjs-dist/legacy/**
 src/**
 .gitignore
 .yarnrc
