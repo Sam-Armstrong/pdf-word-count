@@ -55,20 +55,20 @@ excluding any tokens that are just made up of punctuation.
 
 ## Release Notes
 
-### v1.0.0
+### 1.0.0
 
 First full release of pdf-word-count. Adds page count, file size, and words per page stats to the status bar tooltip,
 along with styling improvements and improved documentation.
 
-### Pre-Release v0.0.3
+### Pre-Release 0.0.3
 
 Add pdfjs bundling to avoid extension import issue, expand the test suite to improve the extension robustness.
 
-### Pre-Release v0.0.2
+### Pre-Release 0.0.2
 
 Add Open VSX deployment and update extension description and notes.
 
-### Pre-Release v0.0.1
+### Pre-Release 0.0.1
 
 Initial release of pdf-word-count, a lightweight extension that displays the word count of PDF documents in the status bar.
 Only deployed to the VS Code Marketplace in this initial pre-release.

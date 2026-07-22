@@ -3,7 +3,7 @@
   "displayName": "PDF Word Count",
   "description": "Displays the word count of PDF documents in the status bar.",
   "icon": "images/icon.png",
-  "version": "1.0.0",
+  "version": "0.0.3",
   "publisher": "Sam-Armstrong",
   "license": "MIT",
   "repository": {
