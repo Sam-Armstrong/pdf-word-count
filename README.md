@@ -55,6 +55,11 @@ excluding any tokens that are just made up of punctuation.
 
 ## Release Notes
 
+### v1.0.0
+
+First full release of pdf-word-count. Adds page count, file size, and words per page stats to the status bar tooltip,
+along with styling improvements and improved documentation.
+
 ### Pre-Release v0.0.3
 
 Add pdfjs bundling to avoid extension import issue, expand the test suite to improve the extension robustness.
