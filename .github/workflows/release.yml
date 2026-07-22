@@ -4,12 +4,18 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,6 +32,14 @@ jobs:
 
       - name: Update package.json Version
         run: npm version "${{ steps.get_version.outputs.VERSION }}" --no-git-tag-version
+
+      - name: Commit Version Update
+        run: |
+          git config user.name "Sam-Armstrong"
+          git config user.email "samuel_e_armstrong@yahoo.co.uk"
+          git add package.json package-lock.json
+          git diff --staged --quiet || git commit -m "chore: bump version number to ${{ steps.get_version.outputs.VERSION }}"
+          git push
 
       - name: Install Publisher Tools
         run: npm install -g @vscode/vsce ovsx
