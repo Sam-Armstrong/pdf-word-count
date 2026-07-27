@@ -44,34 +44,21 @@ export function wordsPerPage(stats: Pick<PdfStats, "wordCount" | "pageCount">): 
 
 /**
  * Returns the URI of the PDF that should currently drive the status bar.
+ * Only the active tab in the focused tab group counts — background PDF tabs
+ * must not keep the status bar visible.
  */
 async function getActivePdfUri(): Promise<vscode.Uri | undefined> {
-    for (const group of vscode.window.tabGroups.all) {
-        const candidateTabs = [
-            group.activeTab,
-            ...group.tabs.filter((tab) => tab.isActive)
-        ].filter((tab): tab is vscode.Tab => tab !== undefined);
+    const activeGroup = vscode.window.tabGroups.activeTabGroup;
+    const candidateTabs = [
+        activeGroup.activeTab,
+        ...activeGroup.tabs.filter((tab) => tab.isActive)
+    ].filter((tab): tab is vscode.Tab => tab !== undefined);
 
-        for (const tab of candidateTabs) {
-            const uri = await getPdfUriFromTab(tab);
-            if (uri) {
-                return uri;
-            }
+    for (const tab of candidateTabs) {
+        const uri = await getPdfUriFromTab(tab);
+        if (uri) {
+            return uri;
         }
-    }
-
-    const pdfUris: vscode.Uri[] = [];
-    for (const group of vscode.window.tabGroups.all) {
-        for (const tab of group.tabs) {
-            const uri = await getPdfUriFromTab(tab);
-            if (uri) {
-                pdfUris.push(uri);
-            }
-        }
-    }
-
-    if (pdfUris.length === 1) {
-        return pdfUris[0];
     }
 
     const editor = vscode.window.activeTextEditor;
