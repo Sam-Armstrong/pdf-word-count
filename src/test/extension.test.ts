@@ -269,6 +269,43 @@ suite("extension integration", function () {
         assert.strictEqual(stats, undefined);
     });
 
+    test("recount returns undefined when a PDF is open but a non-PDF is active", async function () {
+        // status bar should only reflect the active window, not a background PDF tab
+        const adamPath = pdfFixturePath("adam.pdf");
+        if (!fs.existsSync(adamPath)) {
+            this.skip();
+            return;
+        }
+
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+        const pdfUri = vscode.Uri.file(adamPath);
+        await vscode.commands.executeCommand("vscode.open", pdfUri);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const readmeUri = vscode.Uri.file(path.join(__dirname, "../../README.md"));
+        await vscode.commands.executeCommand("vscode.open", readmeUri);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const activeEditor = vscode.window.activeTextEditor;
+        assert.ok(activeEditor, "expected a non-PDF editor to be active");
+        assert.ok(
+            !isPdfUri(activeEditor!.document.uri),
+            "expected the active editor to be a non-PDF file"
+        );
+
+        const stats = await vscode.commands.executeCommand<PdfStats | undefined>(
+            "pdf-word-count.recount"
+        );
+        assert.strictEqual(
+            stats,
+            undefined,
+            "expected recount/status bar to hide when the active window is not a PDF"
+        );
+
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    });
+
     test("deactivate is safe to call", () => {
         assert.doesNotThrow(() => deactivate());
     });
