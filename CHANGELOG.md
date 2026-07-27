@@ -8,6 +8,10 @@ All notable changes will be documented in this file.
 
 ...
 
+## v1.0.1
+
+- Fix status bar removing the word count when a non-PDF tab is active.
+
 ## v1.0.0
 
 - Add page count, file size, and words per page stats to the status bar tooltip.
