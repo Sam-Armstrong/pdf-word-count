@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=Sam-Armstrong.pdf-word-count">VS Code Marketplace</a>
   &nbsp;·&nbsp;
-  <a href="https://open-vsx.org/extension/Sam-Armstrong/pdf-word-count">Open VSX</a>
+  <a href="https://open-vsx.org/extension/Sam-Armstrong/pdf-word-count">Open VSX Registry</a>
 </p>
 
 <p align="center">
@@ -54,6 +54,10 @@ excluding any tokens that are just made up of punctuation.
 ...
 
 ## Release Notes
+
+### 1.0.1
+
+Fixes an issue where the word count was still displayed in the status bar when a non-PDF tab was active.
 
 ### 1.0.0
 
