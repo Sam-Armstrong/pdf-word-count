@@ -12,6 +12,32 @@ type StatusBarStats = PdfStats & {
     fileSizeBytes: number;
 };
 
+type StatusBarUpdateOptions = {
+    isRetry?: boolean;
+    force?: boolean;
+};
+
+
+/* Retry policy */
+
+/**
+ * Backoff used when a PDF word count fails (e.g. while LaTeX is rewriting the file).
+ * Delay for retry n (1-based) is initialDelayMs * backoffFactor ^ (n - 1).
+ */
+export const WORD_COUNT_RETRY_POLICY = {
+    maxRetries: 8,
+    initialDelayMs: 2000,
+    backoffFactor: 2
+};
+
+/**
+ * Returns the delay in milliseconds before the given 1-based retry attempt.
+ */
+export function wordCountRetryDelayMs(retryNumber: number): number {
+    return WORD_COUNT_RETRY_POLICY.initialDelayMs
+        * (WORD_COUNT_RETRY_POLICY.backoffFactor ** (retryNumber - 1));
+}
+
 
 /* Helper functions */
 
@@ -172,6 +198,9 @@ export function activate(context: vscode.ExtensionContext) {
     const pdfStatsCache = new Map<string, StatusBarStats>();
     let updateSequence = 0;
     let updateTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryCount = 0;
+    let retryUriKey: string | undefined;
     const startupRetryTimers: ReturnType<typeof setTimeout>[] = [];
 
     const statusBarItem = vscode.window.createStatusBarItem(
@@ -216,19 +245,85 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     /**
+     * Cancels a pending word-count retry without resetting the attempt counter.
+     */
+    function cancelWordCountRetry(): void {
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = undefined;
+        }
+    }
+
+    /**
+     * Clears retry state after a successful count, a PDF switch, or teardown.
+     */
+    function resetWordCountRetry(): void {
+        cancelWordCountRetry();
+        retryCount = 0;
+        retryUriKey = undefined;
+    }
+
+    /**
+     * Schedules the next word-count retry using exponential backoff, if any remain.
+     */
+    function scheduleWordCountRetry(cacheKey: string, fileName: string, err: unknown): void {
+        if (retryCount >= WORD_COUNT_RETRY_POLICY.maxRetries) {
+            statusBarItem.text = '$(file-pdf) PDF: Count failed';
+            statusBarItem.tooltip = `Failed to count words in ${fileName}: ${err}`;
+            return;
+        }
+
+        retryCount += 1;
+        retryUriKey = cacheKey;
+        const delayMs = wordCountRetryDelayMs(retryCount);
+
+        statusBarItem.text = '$(file-pdf) PDF: Count failed';
+        statusBarItem.tooltip =
+            `Failed to count words in ${fileName}: ${err}. ` +
+            `Retrying in ${delayMs / 1000}s (${retryCount}/${WORD_COUNT_RETRY_POLICY.maxRetries}).`;
+
+        retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            void updateStatusBar({ isRetry: true });
+        }, delayMs);
+    }
+
+    /**
      * Refreshes the status bar for the active PDF, using the cache when possible.
      * Returns the stats that were shown, or undefined when there is no active PDF
      * or counting failed (so tests can assert success rather than non-throw).
      */
-    async function updateStatusBar(): Promise<StatusBarStats | undefined> {
+    async function updateStatusBar(
+        options?: StatusBarUpdateOptions
+    ): Promise<StatusBarStats | undefined> {
         const pdfUri = await getActivePdfUri();
         if (!pdfUri) {
+            resetWordCountRetry();
             statusBarItem.hide();
             return undefined;
         }
 
         const cacheKey = pdfUri.toString();
         const fileName = path.basename(pdfUri.fsPath);
+
+        if (retryUriKey !== undefined && retryUriKey !== cacheKey) {
+            resetWordCountRetry();
+        }
+
+        // wait for the scheduled backoff unless this is that retry or a forced recount
+        if (
+            retryTimer !== undefined &&
+            retryUriKey === cacheKey &&
+            !options?.isRetry &&
+            !options?.force
+        ) {
+            return undefined;
+        }
+
+        if (options?.force) {
+            resetWordCountRetry();
+        }
+
         const sequence = ++updateSequence;
 
         statusBarItem.text = '$(file-pdf) PDF: Counting...';
@@ -237,6 +332,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (pdfStatsCache.has(cacheKey)) {
             const cached = pdfStatsCache.get(cacheKey)!;
+            resetWordCountRetry();
             renderStatusBar(fileName, cached);
             return cached;
         }
@@ -248,6 +344,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             pdfStatsCache.set(cacheKey, stats);
+            resetWordCountRetry();
             renderStatusBar(fileName, stats);
             return stats;
         } catch (err) {
@@ -255,8 +352,7 @@ export function activate(context: vscode.ExtensionContext) {
                 return undefined;
             }
 
-            statusBarItem.text = '$(file-pdf) PDF: Count failed';
-            statusBarItem.tooltip = `Failed to count words in ${fileName}: ${err}`;
+            scheduleWordCountRetry(cacheKey, fileName, err);
             return undefined;
         }
     }
@@ -291,7 +387,7 @@ export function activate(context: vscode.ExtensionContext) {
         'pdf-word-count.recount',
         async (): Promise<StatusBarStats | undefined> => {
             pdfStatsCache.clear();
-            return updateStatusBar();
+            return updateStatusBar({ force: true });
         }
     );
 
@@ -324,7 +420,7 @@ export function activate(context: vscode.ExtensionContext) {
                 );
 
                 if ((await getActivePdfUri())?.toString() === fileUri.toString()) {
-                    await updateStatusBar();
+                    await updateStatusBar({ force: true });
                 }
 
                 return stats;
@@ -367,6 +463,7 @@ export function activate(context: vscode.ExtensionContext) {
                 if (updateTimer) {
                     clearTimeout(updateTimer);
                 }
+                resetWordCountRetry();
                 for (const timer of startupRetryTimers) {
                     clearTimeout(timer);
                 }

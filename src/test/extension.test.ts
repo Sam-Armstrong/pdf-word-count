@@ -9,6 +9,8 @@ import {
     getTabUri,
     isPdfUri,
     resolvePdfUriFromTabLabel,
+    WORD_COUNT_RETRY_POLICY,
+    wordCountRetryDelayMs,
     wordsPerPage
 } from "../extension";
 import { getPdfStatsFromBuffer, type PdfStats } from "../pdfText";
@@ -87,6 +89,20 @@ suite("extension helpers", () => {
         assert.strictEqual(wordsPerPage({ wordCount: 1000, pageCount: 3 }), 333);
         assert.strictEqual(wordsPerPage({ wordCount: 1000, pageCount: 4 }), 250);
         assert.strictEqual(wordsPerPage({ wordCount: 10, pageCount: 0 }), 0);
+    });
+
+    test("word count retry policy uses exponential backoff", () => {
+        assert.strictEqual(WORD_COUNT_RETRY_POLICY.maxRetries, 8);
+        assert.strictEqual(WORD_COUNT_RETRY_POLICY.initialDelayMs, 2000);
+        assert.strictEqual(WORD_COUNT_RETRY_POLICY.backoffFactor, 2);
+        assert.strictEqual(wordCountRetryDelayMs(1), 2000);
+        assert.strictEqual(wordCountRetryDelayMs(2), 4000);
+        assert.strictEqual(wordCountRetryDelayMs(3), 8000);
+        assert.strictEqual(wordCountRetryDelayMs(4), 16000);
+        assert.strictEqual(wordCountRetryDelayMs(5), 32000);
+        assert.strictEqual(wordCountRetryDelayMs(6), 64000);
+        assert.strictEqual(wordCountRetryDelayMs(7), 128000);
+        assert.strictEqual(wordCountRetryDelayMs(8), 256000);
     });
 
     test("getPdfFileNameFromTabLabel extracts pdf filenames from tab labels", () => {
