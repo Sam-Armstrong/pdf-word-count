@@ -8,6 +8,11 @@ All notable changes will be documented in this file.
 
 ...
 
+## v1.0.2
+
+- Add retries for attempting word count again when it fails, such as during LaTeX compilation.
+- Retry policy uses a backoff factor of 2, with a maximum of 8 retries.
+
 ## v1.0.1
 
 - Fix status bar removing the word count when a non-PDF tab is active.

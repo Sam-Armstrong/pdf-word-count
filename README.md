@@ -55,6 +55,10 @@ excluding any tokens that are just made up of punctuation.
 
 ## Release Notes
 
+### 1.0.2
+
+Adds retries for attempting word count again when it fails (for example, during LaTeX compilation).
+
 ### 1.0.1
 
 Fixes an issue where the word count was still displayed in the status bar when a non-PDF tab was active.
