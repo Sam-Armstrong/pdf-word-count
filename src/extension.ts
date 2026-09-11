@@ -23,11 +23,14 @@ type StatusBarUpdateOptions = {
 /**
  * Backoff used when a PDF word count fails (e.g. while LaTeX is rewriting the file).
  * Delay for retry n (1-based) is initialDelayMs * backoffFactor ^ (n - 1).
+ * The status bar keeps "Counting..." until showFailureAfterRetries attempts have
+ * finished, then shows "Count failed" while any remaining retries continue.
  */
 export const WORD_COUNT_RETRY_POLICY = {
     maxRetries: 8,
     initialDelayMs: 2000,
-    backoffFactor: 2
+    backoffFactor: 2,
+    showFailureAfterRetries: 4
 };
 
 /**
@@ -245,6 +248,22 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     /**
+     * Shows the in-progress counting message on the status bar.
+     */
+    function renderCountingStatus(fileName: string): void {
+        statusBarItem.text = '$(file-pdf) PDF: Counting...';
+        statusBarItem.tooltip = `Counting words in ${fileName}`;
+    }
+
+    /**
+     * Shows the count-failed message on the status bar.
+     */
+    function renderFailedStatus(fileName: string, err: unknown): void {
+        statusBarItem.text = '$(file-pdf) PDF: Count failed';
+        statusBarItem.tooltip = `Failed to count words in ${fileName}: ${err}`;
+    }
+
+    /**
      * Cancels a pending word-count retry without resetting the attempt counter.
      */
     function cancelWordCountRetry(): void {
@@ -268,8 +287,7 @@ export function activate(context: vscode.ExtensionContext) {
      */
     function scheduleWordCountRetry(cacheKey: string, fileName: string, err: unknown): void {
         if (retryCount >= WORD_COUNT_RETRY_POLICY.maxRetries) {
-            statusBarItem.text = '$(file-pdf) PDF: Count failed';
-            statusBarItem.tooltip = `Failed to count words in ${fileName}: ${err}`;
+            renderFailedStatus(fileName, err);
             return;
         }
 
@@ -277,10 +295,11 @@ export function activate(context: vscode.ExtensionContext) {
         retryUriKey = cacheKey;
         const delayMs = wordCountRetryDelayMs(retryCount);
 
-        statusBarItem.text = '$(file-pdf) PDF: Count failed';
-        statusBarItem.tooltip =
-            `Failed to count words in ${fileName}: ${err}. ` +
-            `Retrying in ${delayMs / 1000}s (${retryCount}/${WORD_COUNT_RETRY_POLICY.maxRetries}).`;
+        if (retryCount > WORD_COUNT_RETRY_POLICY.showFailureAfterRetries) {
+            renderFailedStatus(fileName, err);
+        } else {
+            renderCountingStatus(fileName);
+        }
 
         retryTimer = setTimeout(() => {
             retryTimer = undefined;
@@ -326,8 +345,10 @@ export function activate(context: vscode.ExtensionContext) {
 
         const sequence = ++updateSequence;
 
-        statusBarItem.text = '$(file-pdf) PDF: Counting...';
-        statusBarItem.tooltip = `Counting words in ${fileName}`;
+        // later retries keep "Count failed" visible so the 32s+ waits do not look stuck
+        if (retryCount <= WORD_COUNT_RETRY_POLICY.showFailureAfterRetries) {
+            renderCountingStatus(fileName);
+        }
         statusBarItem.show();
 
         if (pdfStatsCache.has(cacheKey)) {

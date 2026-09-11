@@ -95,6 +95,7 @@ suite("extension helpers", () => {
         assert.strictEqual(WORD_COUNT_RETRY_POLICY.maxRetries, 8);
         assert.strictEqual(WORD_COUNT_RETRY_POLICY.initialDelayMs, 2000);
         assert.strictEqual(WORD_COUNT_RETRY_POLICY.backoffFactor, 2);
+        assert.strictEqual(WORD_COUNT_RETRY_POLICY.showFailureAfterRetries, 4);
         assert.strictEqual(wordCountRetryDelayMs(1), 2000);
         assert.strictEqual(wordCountRetryDelayMs(2), 4000);
         assert.strictEqual(wordCountRetryDelayMs(3), 8000);
